@@ -1,40 +1,43 @@
 #!/usr/bin/env python3
 """
-Fetch all PRs authored by a GitHub user across all relevant repos
-since the employment start date.
+Fetch all PRs authored by a GitHub user across all repos in the algolia org
+since the employment start date. Repos are discovered dynamically — no
+hardcoded list required.
 
-Output: data/prs.json  — list of PR objects, each tagged with `repo`
+Output: data/{author}_prs.json
 
 Usage:
     python3 scripts/fetch_prs.py
-    python3 scripts/fetch_prs.py --since 2025-05-28 --output data/prs.json
-    python3 scripts/fetch_prs.py --author some-colleague --output data/prs_colleague.json
+    python3 scripts/fetch_prs.py --since 2025-05-28
+    python3 scripts/fetch_prs.py --author some-colleague
+    python3 scripts/fetch_prs.py --output path/to/custom.json
 """
 
 import argparse
 import json
 from pathlib import Path
 
-from pr_utils import REPOS, START_DATE, current_user, fetch_prs_for_numbers, search_pr_numbers
+from pr_utils import START_DATE, current_user, discover_repos, fetch_prs_for_numbers, search_pr_numbers
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--since", default=START_DATE)
-    parser.add_argument("--output", default="data/prs.json")
-    parser.add_argument(
-        "--author",
-        default=None,
-        help="GitHub username (defaults to current authenticated user)",
-    )
+    parser.add_argument("--since",  default=START_DATE)
+    parser.add_argument("--author", default=None, help="GitHub username (defaults to current authenticated user)")
+    parser.add_argument("--output", default=None, help="Output path (default: data/{author}_prs.json)")
     args = parser.parse_args()
 
     author = args.author or current_user()
+    output_path = Path(args.output or f"data/{author}_prs.json")
+
     print(f"Fetching authored PRs for: {author}  (since {args.since})")
 
-    # Collect PR numbers across all repos
+    print("Discovering repos...", end=" ", flush=True)
+    repos = discover_repos(f"author:{author}", args.since)
+    print(f"{len(repos)} repos found: {', '.join(r.split('/')[1] for r in repos)}")
+
     all_numbers: list[tuple[str, int]] = []
-    for repo in REPOS:
+    for repo in repos:
         print(f"  Searching {repo} ...", end=" ", flush=True)
         numbers = search_pr_numbers(f"author:{author}+repo:{repo}", args.since)
         print(f"{len(numbers)} found")
@@ -43,7 +46,6 @@ def main():
     print(f"\nFetching details for {len(all_numbers)} PRs...")
     prs = fetch_prs_for_numbers(all_numbers, label="fetching")
 
-    output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(prs, indent=2))
 

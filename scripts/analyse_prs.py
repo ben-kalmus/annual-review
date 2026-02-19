@@ -245,44 +245,50 @@ def display(author: str, authored: dict, reviewed: dict | None) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",          default="data/prs.json",          help="Authored PRs JSON")
-    parser.add_argument("--reviewed-input", default="data/reviewed_prs.json", help="Reviewed PRs JSON")
+    parser.add_argument("--input",          default=None, help="Authored PRs JSON (default: data/{author}_prs.json)")
+    parser.add_argument("--reviewed-input", default=None, help="Reviewed PRs JSON (default: data/{author}_reviewed_prs.json)")
     parser.add_argument("--author",         default=None,                      help="Filter to this author login")
     parser.add_argument("--output",         default=None,                      help="Also write stats JSON to this path")
     args = parser.parse_args()
 
-    prs = json.loads(Path(args.input).read_text())
+    author = args.author
 
-    # Infer author from data if not supplied
-    if args.author:
-        author = args.author
-        prs = [pr for pr in prs if pr.get("author") == author]
-    else:
+    # Derive file paths from author when not explicitly provided
+    input_path          = Path(args.input)          if args.input          else Path(f"data/{author}_prs.json")          if author else None
+    reviewed_input_path = Path(args.reviewed_input) if args.reviewed_input else Path(f"data/{author}_reviewed_prs.json") if author else None
+
+    if input_path is None:
+        parser.error("Pass --author <login> or --input <path> to specify whose data to analyse.")
+
+    prs = json.loads(input_path.read_text())
+
+    # Infer author from data if not explicitly supplied
+    if not author:
         authors = {pr.get("author") for pr in prs if pr.get("author")}
         if len(authors) == 1:
             author = authors.pop()
+            reviewed_input_path = Path(f"data/{author}_reviewed_prs.json")
         elif len(authors) == 0:
             print("Warning: no 'author' field in PR data. Re-run fetch_prs.py or pass --author.")
             author = "unknown"
         else:
             print(f"Multiple authors found: {authors}. Pass --author to filter.")
             author = "unknown"
+    else:
+        prs = [pr for pr in prs if pr.get("author") == author]
 
     authored_stats = analyse_authored(prs, author)
 
     # Warn if --input was customised but --reviewed-input was left as default
-    default_input          = "data/prs.json"
-    default_reviewed_input = "data/reviewed_prs.json"
-    if args.input != default_input and args.reviewed_input == default_reviewed_input:
+    if args.input and not args.reviewed_input:
         print(
-            f"Warning: --input is set to '{args.input}' but --reviewed-input is still "
-            f"the default ('{default_reviewed_input}'). These may not match the same author. "
-            f"Pass --reviewed-input to be explicit."
+            f"Warning: --input is set to '{args.input}' but --reviewed-input was not provided. "
+            f"Defaulting to '{reviewed_input_path}'. Pass --reviewed-input to be explicit."
         )
 
     # Load reviewed PRs if the file exists
     reviewed_stats = None
-    reviewed_path = Path(args.reviewed_input)
+    reviewed_path = reviewed_input_path
     if reviewed_path.exists():
         reviewed_prs = json.loads(reviewed_path.read_text())
 
@@ -301,7 +307,7 @@ def main():
 
         reviewed_stats = analyse_reviewed(reviewed_prs, author)
     else:
-        print(f"Note: {args.reviewed_input} not found — skipping review activity section.")
+        print(f"Note: {reviewed_path} not found — skipping review activity section.")
 
     display(author, authored_stats, reviewed_stats)
 

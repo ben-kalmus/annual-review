@@ -11,17 +11,6 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-# Repos to query — add or remove as needed
-REPOS = [
-    "algolia/metis",
-    "algolia/metis-deployments",
-    "algolia/metis-perf",
-    "algolia/AlgoliaSaaS",
-    "algolia/api-clients-automation",
-    "algolia/logger",
-    "algolia/terraform-modules",
-]
-
 START_DATE = "2025-05-28"
 BATCH_SIZE = 50  # safe page size that avoids GraphQL 502s on large repos
 
@@ -60,6 +49,32 @@ def gh(*args: str) -> list | dict:
 def current_user() -> str:
     """Return the login of the currently authenticated GitHub user."""
     return gh("api", "user")["login"]
+
+
+def discover_repos(query: str, since: str, org: str = "algolia") -> list[str]:
+    """
+    Discover all repos containing PRs matching `query` since `since`,
+    filtered to the given GitHub organisation.
+
+    Uses the search API so no hardcoded repo list is needed.
+    Returns a sorted list of 'org/repo' strings.
+    """
+    repos: set[str] = set()
+    page = 1
+    full_query = f"{query}+type:pr+created:>={since}"
+    while True:
+        data = gh("api", f"search/issues?q={full_query}&per_page=100&page={page}")
+        items = data.get("items", []) if isinstance(data, dict) else []
+        if not items:
+            break
+        for item in items:
+            repo = item["repository_url"].removeprefix("https://api.github.com/repos/")
+            if repo.startswith(f"{org}/"):
+                repos.add(repo)
+        if len(items) < 100:
+            break
+        page += 1
+    return sorted(repos)
 
 
 def search_pr_numbers(query: str, since: str) -> list[tuple[str, int]]:
