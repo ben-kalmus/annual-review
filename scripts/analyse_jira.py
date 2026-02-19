@@ -7,7 +7,7 @@ issue type, priority, project, story points, cycle time, epics/initiatives,
 and sprint breakdown — all detail sections scoped to tickets assigned to you.
 
 Usage:
-    python3 scripts/analyse_jira.py --author ben-kalmus
+    python3 scripts/analyse_jira.py --author user-name
     python3 scripts/analyse_jira.py --input data/ben-kalmus_jira.csv
     python3 scripts/analyse_jira.py --input data/ben-kalmus_jira.csv --output data/jira_stats.json
 """
@@ -257,22 +257,26 @@ def display(
         print(f"  {'─' * 35} {'─' * 4}  {'─' * 4}  {'─' * 4}")
         for sprint, s in sprints.items():
             if sprint in sprint_totals:
-                tot    = sprint_totals[sprint]
+                tot = sprint_totals[sprint]
                 t_tkts = tot["total_tickets"]
-                ratio  = s["tickets"] / t_tkts if t_tkts else 0
+                ratio = s["tickets"] / t_tkts if t_tkts else 0
                 filled = round(ratio * 20)  # bar scaled to 20 chars = 100%
-                bar    = "█" * filled + "░" * (20 - filled)
+                bar = "█" * filled + "░" * (20 - filled)
                 print(
                     f"  {sprint:<35} {s['tickets']:>4}  {t_tkts:>4}  {pct(s['tickets'], t_tkts):>4}  {bar}"
                 )
             else:
-                print(f"  {sprint:<35} {s['tickets']:>4}   {'?':>4}   {'?':>4}  (no totals)")
+                print(
+                    f"  {sprint:<35} {s['tickets']:>4}   {'?':>4}   {'?':>4}  (no totals)"
+                )
     else:
         print(f"  {'sprint':<35} {'tickets':>7}   {'pts':>5}")
         print(f"  {'─' * 35} {'─' * 7}   {'─' * 5}")
         for sprint, s in sprints.items():
             bar = "█" * s["tickets"]
-            print(f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}")
+            print(
+                f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}"
+            )
 
     print()
 
@@ -320,7 +324,7 @@ def main():
         reader = csv.DictReader(fh)
         rows = list(reader)
 
-    # Infer JIRA display name from the Assignee column (e.g. "Ben Kalmus")
+    # Infer JIRA display name from the Assignee column
     assignee_counts: Counter = Counter(
         r.get("Assignee", "").strip() for r in rows if r.get("Assignee", "").strip()
     )
