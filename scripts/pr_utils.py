@@ -9,6 +9,7 @@ Used by:
 import json
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 START_DATE = "2025-05-28"
@@ -37,13 +38,52 @@ PR_FIELDS = ",".join([
 ])
 
 
+_RATE_LIMIT_PHRASES = ("rate limit", "secondary rate", "429")
+_MAX_RETRIES = 5
+_SECONDARY_RATE_WAIT = 60  # seconds to wait on secondary rate limit hits
+
+
+def _wait_for_rate_limit_reset() -> None:
+    """Query the API rate limit and sleep until the reset window opens."""
+    try:
+        result = subprocess.run(
+            ["gh", "api", "rate_limit", "--jq", ".rate.reset"],
+            capture_output=True, text=True,
+        )
+        reset_ts = int(result.stdout.strip())
+        wait = max(0, reset_ts - int(time.time())) + 2  # +2s buffer
+        print(f"\n  Rate limit hit — waiting {wait}s for reset...", file=sys.stderr)
+        time.sleep(wait)
+    except Exception:
+        # If we can't determine the reset time, fall back to a fixed wait
+        print(f"\n  Rate limit hit — waiting {_SECONDARY_RATE_WAIT}s...", file=sys.stderr)
+        time.sleep(_SECONDARY_RATE_WAIT)
+
+
 def gh(*args: str) -> list | dict:
-    """Run a gh CLI command and return parsed JSON. Returns [] on error."""
-    result = subprocess.run(["gh", *args], capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"  Warning: {result.stderr.strip()}", file=sys.stderr)
-        return []
-    return json.loads(result.stdout)
+    """
+    Run a gh CLI command and return parsed JSON.
+    Retries automatically on rate limit errors with appropriate back-off.
+    Raises RuntimeError if all retries are exhausted.
+    """
+    for attempt in range(1, _MAX_RETRIES + 1):
+        result = subprocess.run(["gh", *args], capture_output=True, text=True)
+
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+
+        stderr = result.stderr.strip()
+
+        if any(phrase in stderr.lower() for phrase in _RATE_LIMIT_PHRASES):
+            if attempt == _MAX_RETRIES:
+                raise RuntimeError(f"Rate limit persists after {_MAX_RETRIES} retries. Aborting.")
+            _wait_for_rate_limit_reset()
+        else:
+            # Non-rate-limit error — warn and return empty (existing behaviour)
+            print(f"  Warning: {stderr}", file=sys.stderr)
+            return []
+
+    return []  # unreachable, satisfies type checker
 
 
 def current_user() -> str:
