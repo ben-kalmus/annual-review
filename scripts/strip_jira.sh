@@ -6,16 +6,36 @@
 # useful for the annual performance review.
 #
 # Usage:
-#   ./scripts/strip_jira.sh                        # uses defaults
-#   ./scripts/strip_jira.sh JIRA.csv data/out.csv  # custom paths
+#   ./scripts/strip_jira.sh --author <login>                   # output: data/<login>_jira.csv
+#   ./scripts/strip_jira.sh --author <login> --input JIRA.csv  # custom input
+#   ./scripts/strip_jira.sh --input JIRA.csv --output data/out.csv  # fully custom
 #
 # Requires: mlr (miller), python3
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-INPUT="${1:-"$REPO_ROOT/JIRA.csv"}"
-OUTPUT="${2:-"$REPO_ROOT/data/jira_stripped.csv"}"
+
+AUTHOR=""
+INPUT="$REPO_ROOT/JIRA.csv"
+OUTPUT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --author) AUTHOR="$2"; shift 2 ;;
+        --input)  INPUT="$2";  shift 2 ;;
+        --output) OUTPUT="$2"; shift 2 ;;
+        *) echo "Unknown argument: $1"; exit 1 ;;
+    esac
+done
+
+if [[ -z "$OUTPUT" ]]; then
+    if [[ -n "$AUTHOR" ]]; then
+        OUTPUT="$REPO_ROOT/data/${AUTHOR}_jira.csv"
+    else
+        OUTPUT="$REPO_ROOT/data/jira_stripped.csv"
+    fi
+fi
 
 mkdir -p "$(dirname "$OUTPUT")"
 
