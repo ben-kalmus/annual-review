@@ -253,34 +253,26 @@ def display(
     print(f"\n── Sprints ({section}) {'─' * (34 - len(section))}  {len(sprints)} total")
 
     if has_totals:
-        print(
-            f"  {'sprint':<35} {'mine':>4}  {'team':>4}  {'tkts%':>5}   {'my pts':>6}  {'team pts':>8}  {'pts%':>5}"
-        )
-        print(
-            f"  {'─' * 35} {'─' * 4}  {'─' * 4}  {'─' * 5}   {'─' * 6}  {'─' * 8}  {'─' * 5}"
-        )
+        print(f"  {'sprint':<35} {'mine':>4}  {'team':>4}  {'%':>4}")
+        print(f"  {'─' * 35} {'─' * 4}  {'─' * 4}  {'─' * 4}")
         for sprint, s in sprints.items():
             if sprint in sprint_totals:
-                tot = sprint_totals[sprint]
+                tot    = sprint_totals[sprint]
                 t_tkts = tot["total_tickets"]
-                t_pts = tot["total_story_points"]
+                ratio  = s["tickets"] / t_tkts if t_tkts else 0
+                filled = round(ratio * 20)  # bar scaled to 20 chars = 100%
+                bar    = "█" * filled + "░" * (20 - filled)
                 print(
-                    f"  {sprint:<35} {s['tickets']:>4}  {t_tkts:>4}  {pct(s['tickets'], t_tkts):>5}"
-                    f"   {s['story_points']:>6.1f}  {t_pts:>8.1f}  {pct(s['story_points'], t_pts):>5}"
+                    f"  {sprint:<35} {s['tickets']:>4}  {t_tkts:>4}  {pct(s['tickets'], t_tkts):>4}  {bar}"
                 )
             else:
-                bar = "█" * s["tickets"]
-                print(
-                    f"  {sprint:<35} {s['tickets']:>4}   {'?':>4}   {'?':>5}   {s['story_points']:>6.1f}  {'?':>8}   {'?':>5}  (no totals)"
-                )
+                print(f"  {sprint:<35} {s['tickets']:>4}   {'?':>4}   {'?':>4}  (no totals)")
     else:
         print(f"  {'sprint':<35} {'tickets':>7}   {'pts':>5}")
         print(f"  {'─' * 35} {'─' * 7}   {'─' * 5}")
         for sprint, s in sprints.items():
             bar = "█" * s["tickets"]
-            print(
-                f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}"
-            )
+            print(f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}")
 
     print()
 
