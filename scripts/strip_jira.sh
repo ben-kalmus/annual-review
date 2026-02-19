@@ -6,9 +6,10 @@
 # useful for the annual performance review.
 #
 # Usage:
-#   ./scripts/strip_jira.sh --author <login>                   # output: data/<login>_jira.csv
-#   ./scripts/strip_jira.sh --author <login> --input JIRA.csv  # custom input
-#   ./scripts/strip_jira.sh --input JIRA.csv --output data/out.csv  # fully custom
+#   ./scripts/strip_jira.sh --author <login>
+#       Input:  JIRA.csv  (repo root, by convention)
+#       Output: data/<login>_jira.csv
+#   ./scripts/strip_jira.sh --input path/to/JIRA.csv --output data/out.csv  # fully custom
 #
 # Requires: mlr (miller), python3
 
@@ -30,11 +31,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$OUTPUT" ]]; then
-    if [[ -n "$AUTHOR" ]]; then
-        OUTPUT="$REPO_ROOT/data/${AUTHOR}_jira.csv"
-    else
-        OUTPUT="$REPO_ROOT/data/jira_stripped.csv"
+    if [[ -z "$AUTHOR" ]]; then
+        echo "Error: --author <login> is required (or pass --output to set a custom path)"
+        exit 1
     fi
+    OUTPUT="$REPO_ROOT/data/${AUTHOR}_jira.csv"
+fi
+
+if [[ ! -f "$INPUT" ]]; then
+    echo "Error: input file not found: $INPUT"
+    exit 1
 fi
 
 mkdir -p "$(dirname "$OUTPUT")"

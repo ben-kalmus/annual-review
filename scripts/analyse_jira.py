@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""
+Analyse JIRA ticket statistics from a stripped CSV produced by strip_jira.sh.
+
+Produces a summary covering: ticket counts by type/priority/project,
+story points, sprint delivery cadence, epic/initiative breakdown,
+cycle time (created→resolved), and bug rate.
+
+Usage:
+    python3 scripts/analyse_jira.py --author ben-kalmus
+    python3 scripts/analyse_jira.py --input data/ben-kalmus_jira.csv
+    python3 scripts/analyse_jira.py --input data/ben-kalmus_jira.csv --output data/jira_stats.json
+"""
+
+import argparse
+import csv
+import json
+from collections import Counter, defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from statistics import mean, median
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def parse_dt(s: str | None) -> datetime | None:
+    if not s or not s.strip():
+        return None
+    # JIRA dates look like "28/May/25 12:00 AM" or ISO; normalise both
+    for fmt in ("%d/%b/%y %I:%M %p", "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(s.strip(), fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            continue
+    return None
+
+
+def days_between(a: str | None, b: str | None) -> float | None:
+    dt_a, dt_b = parse_dt(a), parse_dt(b)
+    if dt_a and dt_b:
+        return abs((dt_b - dt_a).total_seconds()) / 86400
+    return None
+
+
+def fmt_int(n: int | float) -> str:
+    return f"{n:,.0f}"
+
+
+def pct(n: int, total: int) -> str:
+    return f"{n / total * 100:.0f}%" if total else "0%"
+
+
+def sprint_label(s: str | None) -> str | None:
+    """Extract a short sprint label from the raw sprint field value."""
+    if not s or not s.strip():
+        return None
+    # JIRA sprint fields often look like "CMP Sprint 42" or contain long IDs
+    # Return the raw value trimmed — analysis code can group further
+    return s.strip()
+
+
+def first_sprint(row: dict) -> str | None:
+    """Return the first populated Sprint field for a ticket."""
+    for col in ("Sprint", "Sprint_2", "Sprint_3"):
+        val = row.get(col, "").strip()
+        if val:
+            return sprint_label(val)
+    return None
+
+
+def story_points(row: dict) -> float | None:
+    raw = row.get("Custom field (Story Points)", "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+# ── core analysis ─────────────────────────────────────────────────────────────
+
+def analyse_jira(rows: list[dict]) -> dict:
+    total = len(rows)
+
+    # Ticket counts
+    by_type     = Counter(r.get("Issue Type", "").strip() or "Unknown" for r in rows)
+    by_priority = Counter(r.get("Priority", "").strip() or "Unknown" for r in rows)
+    by_project  = Counter(r.get("Project key", "").strip() or "Unknown" for r in rows)
+    by_status   = Counter(r.get("Status", "").strip() or "Unknown" for r in rows)
+
+    # Story points
+    sp_values = [sp for r in rows if (sp := story_points(r)) is not None]
+    sp_total   = sum(sp_values)
+    sp_missing = total - len(sp_values)
+
+    # Cycle time: days from Created to Resolved (only for resolved tickets)
+    cycle_times = []
+    for r in rows:
+        d = days_between(r.get("Created"), r.get("Resolved"))
+        if d is not None:
+            cycle_times.append(d)
+
+    # Bug rate
+    bugs = sum(1 for r in rows if r.get("Issue Type", "").strip().lower() == "bug")
+
+    # Epic / initiative breakdown via Parent summary
+    parent_counts: Counter = Counter()
+    for r in rows:
+        parent = r.get("Parent summary", "").strip() or "— (no epic)"
+        parent_counts[parent] += 1
+
+    # Sprint delivery cadence
+    sprint_counts: Counter = Counter()
+    sprint_sp: dict[str, float] = defaultdict(float)
+    for r in rows:
+        sp_label = first_sprint(r)
+        if sp_label:
+            sprint_counts[sp_label] += 1
+            sp = story_points(r)
+            if sp is not None:
+                sprint_sp[sp_label] += sp
+
+    # Labels
+    label_counts: Counter = Counter()
+    for r in rows:
+        for col in ("Labels", "Labels_2"):
+            val = r.get(col, "").strip()
+            if val:
+                for label in val.split(","):
+                    label = label.strip()
+                    if label:
+                        label_counts[label] += 1
+
+    return {
+        "totals": {
+            "tickets": total,
+            "resolved": len(cycle_times),
+            "bugs": bugs,
+            "bug_rate_pct": round(bugs / total * 100, 1) if total else 0,
+        },
+        "by_type":     dict(by_type.most_common()),
+        "by_priority": dict(by_priority.most_common()),
+        "by_project":  dict(by_project.most_common()),
+        "by_status":   dict(by_status.most_common()),
+        "story_points": {
+            "total":       round(sp_total, 1),
+            "mean_per_ticket": round(mean(sp_values), 1) if sp_values else None,
+            "median_per_ticket": round(median(sp_values), 1) if sp_values else None,
+            "missing_count": sp_missing,
+        },
+        "cycle_time_days": {
+            "mean":   round(mean(cycle_times), 1) if cycle_times else None,
+            "median": round(median(cycle_times), 1) if cycle_times else None,
+            "min":    round(min(cycle_times), 1) if cycle_times else None,
+            "max":    round(max(cycle_times), 1) if cycle_times else None,
+            "count":  len(cycle_times),
+        },
+        "epics": dict(parent_counts.most_common()),
+        "sprints": {
+            s: {"tickets": sprint_counts[s], "story_points": round(sprint_sp.get(s, 0), 1)}
+            for s in sorted(sprint_counts, key=lambda x: sprint_counts[x], reverse=True)
+        },
+        "labels": dict(label_counts.most_common()),
+    }
+
+
+# ── display ───────────────────────────────────────────────────────────────────
+
+def display(author: str, stats: dict) -> None:
+    t   = stats["totals"]
+    sp  = stats["story_points"]
+    ct  = stats["cycle_time_days"]
+
+    print(f"\n{'═' * 55}")
+    print(f"  JIRA Analysis — {author}")
+    print(f"{'═' * 55}")
+
+    print(f"\n── Ticket Counts {'─' * 37}")
+    print(f"  Total        {fmt_int(t['tickets'])}")
+    print(f"  Resolved     {fmt_int(t['resolved'])}  ({pct(t['resolved'], t['tickets'])})")
+    print(f"  Bugs         {fmt_int(t['bugs'])}  ({t['bug_rate_pct']}%)")
+
+    print(f"\n── By Issue Type {'─' * 37}")
+    for issue_type, n in stats["by_type"].items():
+        print(f"  {issue_type:<25} {n:>3}  {pct(n, t['tickets']):>4}")
+
+    print(f"\n── By Priority {'─' * 39}")
+    for priority, n in stats["by_priority"].items():
+        print(f"  {priority:<25} {n:>3}  {pct(n, t['tickets']):>4}")
+
+    print(f"\n── By Project {'─' * 40}")
+    for project, n in stats["by_project"].items():
+        print(f"  {project:<25} {n:>3}  {pct(n, t['tickets']):>4}")
+
+    print(f"\n── Story Points {'─' * 38}")
+    print(f"  Total        {fmt_int(sp['total'])}")
+    if sp["mean_per_ticket"] is not None:
+        print(f"  Mean/ticket  {sp['mean_per_ticket']}")
+        print(f"  Median       {sp['median_per_ticket']}")
+    if sp["missing_count"]:
+        print(f"  (missing on {sp['missing_count']} tickets)")
+
+    if ct["mean"] is not None:
+        print(f"\n── Cycle Time (created → resolved) {'─' * 19}")
+        print(f"  Mean         {ct['mean']} days")
+        print(f"  Median       {ct['median']} days")
+        print(f"  Fastest      {ct['min']} days")
+        print(f"  Slowest      {ct['max']} days")
+        print(f"  ({ct['count']} resolved tickets)")
+
+    print(f"\n── Epics / Initiatives (by Parent summary) {'─' * 11}")
+    for epic, n in stats["epics"].items():
+        short = epic[:48]
+        print(f"  {short:<48} {n:>3}")
+
+    print(f"\n── Sprint Delivery {'─' * 35}")
+    for sprint, s in stats["sprints"].items():
+        short = sprint[:40]
+        print(f"  {short:<40} {s['tickets']:>3} tickets  {s['story_points']:>5} pts")
+
+    if stats["labels"]:
+        print(f"\n── Labels {'─' * 44}")
+        for label, n in list(stats["labels"].items())[:15]:
+            print(f"  {label:<35} {n}")
+
+    print()
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input",  default=None, help="Stripped JIRA CSV (default: data/{author}_jira.csv)")
+    parser.add_argument("--author", default=None, help="Author login (used to derive default input path)")
+    parser.add_argument("--output", default=None, help="Also write stats JSON to this path")
+    args = parser.parse_args()
+
+    author = args.author
+
+    if args.input:
+        input_path = Path(args.input)
+    elif author:
+        input_path = Path(f"data/{author}_jira.csv")
+    else:
+        parser.error("Pass --author <login> or --input <path> to specify which CSV to analyse.")
+
+    if not input_path.exists():
+        parser.error(f"Input file not found: {input_path}")
+
+    with input_path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        rows = list(reader)
+
+    if not author:
+        # Try to infer from Assignee field
+        assignees = {r.get("Assignee", "").strip() for r in rows if r.get("Assignee", "").strip()}
+        author = assignees.pop() if len(assignees) == 1 else (input_path.stem.removesuffix("_jira") or "unknown")
+
+    stats = analyse_jira(rows)
+    display(author, stats)
+
+    if args.output:
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"author": author, "jira": stats}, indent=2))
+        print(f"Stats written to: {args.output}")
+
+
+if __name__ == "__main__":
+    main()
