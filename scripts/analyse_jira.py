@@ -111,11 +111,19 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
         parent = r.get("Parent summary", "").strip() or "— (no epic)"
         parent_counts[parent] += 1
 
-    # Unique sprints worked on
-    unique_sprints: set[str] = set()
+    # Sprint breakdown — tickets and story points per sprint, sorted by name
+    sprint_tickets: Counter = Counter()
+    sprint_sp: dict[str, float] = {}
     for r in rows:
+        sp = story_points(r)
         for s in all_sprints(r):
-            unique_sprints.add(s)
+            sprint_tickets[s] += 1
+            sprint_sp[s] = sprint_sp.get(s, 0.0) + (sp or 0.0)
+
+    sprints = {
+        s: {"tickets": sprint_tickets[s], "story_points": round(sprint_sp.get(s, 0), 1)}
+        for s in sorted(sprint_tickets)
+    }
 
     return {
         "totals": {
@@ -144,7 +152,7 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
             "count":  len(cycle_times),
         },
         "epics": dict(parent_counts.most_common()),
-        "sprints_worked_on": len(unique_sprints),
+        "sprints": sprints,
     }
 
 
@@ -202,8 +210,11 @@ def display(author: str, jira_name: str, stats: dict) -> None:
         short = epic[:50]
         print(f"  {short:<50} {n:>3}")
 
-    print(f"\n── Sprints {'─' * 43}")
-    print(f"  Worked across {stats['sprints_worked_on']} sprints")
+    sprints = stats["sprints"]
+    print(f"\n── Sprints {'─' * 43}  {len(sprints)} total")
+    for sprint, s in sprints.items():
+        bar = "█" * s["tickets"]
+        print(f"  {sprint:<35} {s['tickets']:>2} tickets  {s['story_points']:>5.1f} pts  {bar}")
 
     print()
 
