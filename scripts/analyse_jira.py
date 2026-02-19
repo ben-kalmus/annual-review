@@ -15,6 +15,7 @@ Usage:
 import argparse
 import csv
 import json
+import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ from statistics import mean, median
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def parse_dt(s: str | None) -> datetime | None:
     if not s or not s.strip():
@@ -81,14 +83,16 @@ def story_points(row: dict) -> float | None:
 
 # ── core analysis ─────────────────────────────────────────────────────────────
 
+
 def analyse_jira(rows: list[dict], jira_name: str) -> dict:
     total = len(rows)
 
     # Assigned / reported counts — top-level only, uses full dataset
     assigned_rows = [r for r in rows if r.get("Assignee", "").strip() == jira_name]
-    reported      = sum(1 for r in rows if r.get("Reporter", "").strip() == jira_name)
-    both          = sum(
-        1 for r in rows
+    reported = sum(1 for r in rows if r.get("Reporter", "").strip() == jira_name)
+    both = sum(
+        1
+        for r in rows
         if r.get("Assignee", "").strip() == jira_name
         and r.get("Reporter", "").strip() == jira_name
     )
@@ -97,21 +101,30 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
     # ── Everything below is scoped to assigned_rows ──────────────────────────
 
     # Ticket type / priority / project breakdowns
-    by_type     = Counter(r.get("Issue Type", "").strip() or "Unknown" for r in assigned_rows)
-    by_priority = Counter(r.get("Priority", "").strip() or "Unknown" for r in assigned_rows)
-    by_project  = Counter(r.get("Project key", "").strip() or "Unknown" for r in assigned_rows)
+    by_type = Counter(
+        r.get("Issue Type", "").strip() or "Unknown" for r in assigned_rows
+    )
+    by_priority = Counter(
+        r.get("Priority", "").strip() or "Unknown" for r in assigned_rows
+    )
+    by_project = Counter(
+        r.get("Project key", "").strip() or "Unknown" for r in assigned_rows
+    )
 
     # Bug rate
-    bugs = sum(1 for r in assigned_rows if r.get("Issue Type", "").strip().lower() == "bug")
+    bugs = sum(
+        1 for r in assigned_rows if r.get("Issue Type", "").strip().lower() == "bug"
+    )
 
     # Story points
-    sp_values  = [sp for r in assigned_rows if (sp := story_points(r)) is not None]
-    sp_total   = sum(sp_values)
+    sp_values = [sp for r in assigned_rows if (sp := story_points(r)) is not None]
+    sp_total = sum(sp_values)
     sp_missing = assigned - len(sp_values)
 
     # Cycle time: Created → Resolved
     cycle_times = [
-        d for r in assigned_rows
+        d
+        for r in assigned_rows
         if (d := days_between(r.get("Created"), r.get("Resolved"))) is not None
     ]
 
@@ -137,31 +150,31 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
 
     return {
         "totals": {
-            "tickets":  total,
+            "tickets": total,
             "assigned": assigned,
             "reported": reported,
-            "both":     both,
+            "both": both,
             "resolved": len(cycle_times),
-            "bugs":     bugs,
+            "bugs": bugs,
             "bug_rate_pct": round(bugs / assigned * 100, 1) if assigned else 0,
         },
-        "by_type":     dict(by_type.most_common()),
+        "by_type": dict(by_type.most_common()),
         "by_priority": dict(by_priority.most_common()),
-        "by_project":  dict(by_project.most_common()),
+        "by_project": dict(by_project.most_common()),
         "story_points": {
-            "total":             round(sp_total, 1),
-            "mean_per_ticket":   round(mean(sp_values), 1) if sp_values else None,
+            "total": round(sp_total, 1),
+            "mean_per_ticket": round(mean(sp_values), 1) if sp_values else None,
             "median_per_ticket": round(median(sp_values), 1) if sp_values else None,
-            "min":               round(min(sp_values), 1) if sp_values else None,
-            "max":               round(max(sp_values), 1) if sp_values else None,
-            "missing_count":     sp_missing,
+            "min": round(min(sp_values), 1) if sp_values else None,
+            "max": round(max(sp_values), 1) if sp_values else None,
+            "missing_count": sp_missing,
         },
         "cycle_time_days": {
-            "mean":   mean(cycle_times) if cycle_times else None,
+            "mean": mean(cycle_times) if cycle_times else None,
             "median": median(cycle_times) if cycle_times else None,
-            "min":    min(cycle_times) if cycle_times else None,
-            "max":    max(cycle_times) if cycle_times else None,
-            "count":  len(cycle_times),
+            "min": min(cycle_times) if cycle_times else None,
+            "max": max(cycle_times) if cycle_times else None,
+            "count": len(cycle_times),
         },
         "epics": dict(parent_counts.most_common()),
         "sprints": sprints,
@@ -170,8 +183,11 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
 
 # ── display ───────────────────────────────────────────────────────────────────
 
-def display(author: str, jira_name: str, stats: dict) -> None:
-    t  = stats["totals"]
+
+def display(
+    author: str, jira_name: str, stats: dict, sprint_totals: dict | None = None
+) -> None:
+    t = stats["totals"]
     sp = stats["story_points"]
     ct = stats["cycle_time_days"]
 
@@ -181,11 +197,17 @@ def display(author: str, jira_name: str, stats: dict) -> None:
 
     print(f"\n── Ticket Counts {'─' * 37}")
     print(f"  Total            {fmt_int(t['tickets'])}")
-    print(f"  Assigned to you  {fmt_int(t['assigned'])}  ({pct(t['assigned'], t['tickets'])})")
-    print(f"  Reported by you  {fmt_int(t['reported'])}  ({pct(t['reported'], t['tickets'])})")
+    print(
+        f"  Assigned to you  {fmt_int(t['assigned'])}  ({pct(t['assigned'], t['tickets'])})"
+    )
+    print(
+        f"  Reported by you  {fmt_int(t['reported'])}  ({pct(t['reported'], t['tickets'])})"
+    )
     if t["both"]:
         print(f"  Both             {fmt_int(t['both'])}")
-    print(f"  Resolved         {fmt_int(t['resolved'])}  ({pct(t['resolved'], t['assigned'])})")
+    print(
+        f"  Resolved         {fmt_int(t['resolved'])}  ({pct(t['resolved'], t['assigned'])})"
+    )
     print(f"  Bugs             {fmt_int(t['bugs'])}  ({t['bug_rate_pct']}%)")
     print(f"\n  (all sections below: assigned tickets only)")
 
@@ -226,23 +248,66 @@ def display(author: str, jira_name: str, stats: dict) -> None:
         print(f"  {short:<50} {n:>3}")
 
     sprints = stats["sprints"]
-    print(f"\n── Sprints (your tickets) {'─' * 28}  {len(sprints)} total")
-    print(f"  {'sprint':<35} {'tickets':>7}   {'pts':>5}")
-    print(f"  {'─' * 35} {'─' * 7}   {'─' * 5}")
-    for sprint, s in sprints.items():
-        bar = "█" * s["tickets"]
-        print(f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}")
+    has_totals = bool(sprint_totals)
+    section = "your contribution" if has_totals else "your tickets"
+    print(f"\n── Sprints ({section}) {'─' * (34 - len(section))}  {len(sprints)} total")
+
+    if has_totals:
+        print(
+            f"  {'sprint':<35} {'mine':>4}  {'team':>4}  {'tkts%':>5}   {'my pts':>6}  {'team pts':>8}  {'pts%':>5}"
+        )
+        print(
+            f"  {'─' * 35} {'─' * 4}  {'─' * 4}  {'─' * 5}   {'─' * 6}  {'─' * 8}  {'─' * 5}"
+        )
+        for sprint, s in sprints.items():
+            if sprint in sprint_totals:
+                tot = sprint_totals[sprint]
+                t_tkts = tot["total_tickets"]
+                t_pts = tot["total_story_points"]
+                print(
+                    f"  {sprint:<35} {s['tickets']:>4}  {t_tkts:>4}  {pct(s['tickets'], t_tkts):>5}"
+                    f"   {s['story_points']:>6.1f}  {t_pts:>8.1f}  {pct(s['story_points'], t_pts):>5}"
+                )
+            else:
+                bar = "█" * s["tickets"]
+                print(
+                    f"  {sprint:<35} {s['tickets']:>4}   {'?':>4}   {'?':>5}   {s['story_points']:>6.1f}  {'?':>8}   {'?':>5}  (no totals)"
+                )
+    else:
+        print(f"  {'sprint':<35} {'tickets':>7}   {'pts':>5}")
+        print(f"  {'─' * 35} {'─' * 7}   {'─' * 5}")
+        for sprint, s in sprints.items():
+            bar = "█" * s["tickets"]
+            print(
+                f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}"
+            )
 
     print()
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default=None, help="Stripped JIRA CSV (default: data/{author}_jira.csv)")
-    parser.add_argument("--author", default=None, help="GitHub login (used to derive default input path)")
-    parser.add_argument("--output", default=None, help="Also write stats JSON to this path")
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="Stripped JIRA CSV (default: data/{author}_jira.csv)",
+    )
+    parser.add_argument(
+        "--author",
+        default=None,
+        help="GitHub login (used to derive default input path)",
+    )
+    parser.add_argument(
+        "--sprint-totals",
+        default=None,
+        help="Sprint totals JSON (default: data/{author}_sprint_totals.json)",
+    )
+    parser.add_argument(
+        "--output", default=None, help="Also write stats JSON to this path"
+    )
     args = parser.parse_args()
 
     author = args.author
@@ -252,7 +317,9 @@ def main():
     elif author:
         input_path = Path(f"data/{author}_jira.csv")
     else:
-        parser.error("Pass --author <login> or --input <path> to specify which CSV to analyse.")
+        parser.error(
+            "Pass --author <login> or --input <path> to specify which CSV to analyse."
+        )
 
     if not input_path.exists():
         parser.error(f"Input file not found: {input_path}")
@@ -270,13 +337,30 @@ def main():
     if not author:
         author = input_path.stem.removesuffix("_jira") or "unknown"
 
+    # Load sprint totals if available
+    sprint_totals_path = Path(args.sprint_totals or f"data/{author}_sprint_totals.json")
+    sprint_totals: dict | None = None
+    if sprint_totals_path.exists():
+        sprint_totals = json.loads(sprint_totals_path.read_text())
+    elif not args.sprint_totals:
+        # Only print the note when using the default auto-derived path
+        print(
+            f"Note: {sprint_totals_path} not found — sprint contribution % unavailable. "
+            f"Run: python3 scripts/fetch_sprint_totals.py --author {author}",
+            file=sys.stderr,
+        )
+
     stats = analyse_jira(rows, jira_name)
-    display(author, jira_name, stats)
+    display(author, jira_name, stats, sprint_totals=sprint_totals)
 
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({"author": author, "jira_name": jira_name, "jira": stats}, indent=2))
+        out.write_text(
+            json.dumps(
+                {"author": author, "jira_name": jira_name, "jira": stats}, indent=2
+            )
+        )
         print(f"Stats written to: {args.output}")
 
 
