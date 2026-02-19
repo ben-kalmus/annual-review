@@ -4,7 +4,7 @@ Analyse JIRA ticket statistics from a stripped CSV produced by strip_jira.sh.
 
 Produces a summary covering: ticket counts (assigned / reported / both),
 issue type, priority, project, story points, cycle time, epics/initiatives,
-and sprint count.
+and sprint breakdown — all detail sections scoped to tickets assigned to you.
 
 Usage:
     python3 scripts/analyse_jira.py --author ben-kalmus
@@ -44,11 +44,18 @@ def days_between(a: str | None, b: str | None) -> float | None:
     return None
 
 
+def fmt_duration(days: float) -> str:
+    """Format a duration: use minutes when under a day, days otherwise."""
+    if days < 1:
+        return f"{days * 24 * 60:.0f} min"
+    return f"{days:.1f} days"
+
+
 def fmt_int(n: int | float) -> str:
     return f"{n:,.0f}"
 
 
-def pct(n: int, total: int) -> str:
+def pct(n: int | float, total: int | float) -> str:
     return f"{n / total * 100:.0f}%" if total else "0%"
 
 
@@ -77,44 +84,47 @@ def story_points(row: dict) -> float | None:
 def analyse_jira(rows: list[dict], jira_name: str) -> dict:
     total = len(rows)
 
-    # Assigned / reported breakdown — meaningful once JQL includes reporter=
-    assigned  = sum(1 for r in rows if r.get("Assignee", "").strip() == jira_name)
-    reported  = sum(1 for r in rows if r.get("Reporter", "").strip() == jira_name)
-    both      = sum(
+    # Assigned / reported counts — top-level only, uses full dataset
+    assigned_rows = [r for r in rows if r.get("Assignee", "").strip() == jira_name]
+    reported      = sum(1 for r in rows if r.get("Reporter", "").strip() == jira_name)
+    both          = sum(
         1 for r in rows
         if r.get("Assignee", "").strip() == jira_name
         and r.get("Reporter", "").strip() == jira_name
     )
+    assigned = len(assigned_rows)
 
-    # Ticket counts
-    by_type     = Counter(r.get("Issue Type", "").strip() or "Unknown" for r in rows)
-    by_priority = Counter(r.get("Priority", "").strip() or "Unknown" for r in rows)
-    by_project  = Counter(r.get("Project key", "").strip() or "Unknown" for r in rows)
+    # ── Everything below is scoped to assigned_rows ──────────────────────────
 
-    # Story points
-    sp_values  = [sp for r in rows if (sp := story_points(r)) is not None]
-    sp_total   = sum(sp_values)
-    sp_missing = total - len(sp_values)
+    # Ticket type / priority / project breakdowns
+    by_type     = Counter(r.get("Issue Type", "").strip() or "Unknown" for r in assigned_rows)
+    by_priority = Counter(r.get("Priority", "").strip() or "Unknown" for r in assigned_rows)
+    by_project  = Counter(r.get("Project key", "").strip() or "Unknown" for r in assigned_rows)
 
     # Bug rate
-    bugs = sum(1 for r in rows if r.get("Issue Type", "").strip().lower() == "bug")
+    bugs = sum(1 for r in assigned_rows if r.get("Issue Type", "").strip().lower() == "bug")
+
+    # Story points
+    sp_values  = [sp for r in assigned_rows if (sp := story_points(r)) is not None]
+    sp_total   = sum(sp_values)
+    sp_missing = assigned - len(sp_values)
 
     # Cycle time: Created → Resolved
     cycle_times = [
-        d for r in rows
+        d for r in assigned_rows
         if (d := days_between(r.get("Created"), r.get("Resolved"))) is not None
     ]
 
     # Epic / initiative breakdown via Parent summary
     parent_counts: Counter = Counter()
-    for r in rows:
+    for r in assigned_rows:
         parent = r.get("Parent summary", "").strip() or "— (no epic)"
         parent_counts[parent] += 1
 
     # Sprint breakdown — tickets and story points per sprint, sorted by name
     sprint_tickets: Counter = Counter()
     sprint_sp: dict[str, float] = {}
-    for r in rows:
+    for r in assigned_rows:
         sp = story_points(r)
         for s in all_sprints(r):
             sprint_tickets[s] += 1
@@ -133,7 +143,7 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
             "both":     both,
             "resolved": len(cycle_times),
             "bugs":     bugs,
-            "bug_rate_pct": round(bugs / total * 100, 1) if total else 0,
+            "bug_rate_pct": round(bugs / assigned * 100, 1) if assigned else 0,
         },
         "by_type":     dict(by_type.most_common()),
         "by_priority": dict(by_priority.most_common()),
@@ -142,13 +152,15 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
             "total":             round(sp_total, 1),
             "mean_per_ticket":   round(mean(sp_values), 1) if sp_values else None,
             "median_per_ticket": round(median(sp_values), 1) if sp_values else None,
+            "min":               round(min(sp_values), 1) if sp_values else None,
+            "max":               round(max(sp_values), 1) if sp_values else None,
             "missing_count":     sp_missing,
         },
         "cycle_time_days": {
-            "mean":   round(mean(cycle_times), 1) if cycle_times else None,
-            "median": round(median(cycle_times), 1) if cycle_times else None,
-            "min":    round(min(cycle_times), 1) if cycle_times else None,
-            "max":    round(max(cycle_times), 1) if cycle_times else None,
+            "mean":   mean(cycle_times) if cycle_times else None,
+            "median": median(cycle_times) if cycle_times else None,
+            "min":    min(cycle_times) if cycle_times else None,
+            "max":    max(cycle_times) if cycle_times else None,
             "count":  len(cycle_times),
         },
         "epics": dict(parent_counts.most_common()),
@@ -173,35 +185,38 @@ def display(author: str, jira_name: str, stats: dict) -> None:
     print(f"  Reported by you  {fmt_int(t['reported'])}  ({pct(t['reported'], t['tickets'])})")
     if t["both"]:
         print(f"  Both             {fmt_int(t['both'])}")
-    print(f"  Resolved         {fmt_int(t['resolved'])}  ({pct(t['resolved'], t['tickets'])})")
+    print(f"  Resolved         {fmt_int(t['resolved'])}  ({pct(t['resolved'], t['assigned'])})")
     print(f"  Bugs             {fmt_int(t['bugs'])}  ({t['bug_rate_pct']}%)")
+    print(f"\n  (all sections below: assigned tickets only)")
 
     print(f"\n── By Issue Type {'─' * 37}")
     for issue_type, n in stats["by_type"].items():
-        print(f"  {issue_type:<25} {n:>3}  {pct(n, t['tickets']):>4}")
+        print(f"  {issue_type:<25} {n:>3}  {pct(n, t['assigned']):>4}")
 
     print(f"\n── By Priority {'─' * 39}")
     for priority, n in stats["by_priority"].items():
-        print(f"  {priority:<25} {n:>3}  {pct(n, t['tickets']):>4}")
+        print(f"  {priority:<25} {n:>3}  {pct(n, t['assigned']):>4}")
 
     print(f"\n── By Project {'─' * 40}")
     for project, n in stats["by_project"].items():
-        print(f"  {project:<25} {n:>3}  {pct(n, t['tickets']):>4}")
+        print(f"  {project:<25} {n:>3}  {pct(n, t['assigned']):>4}")
 
     print(f"\n── Story Points {'─' * 38}")
     print(f"  Total            {fmt_int(sp['total'])}")
     if sp["mean_per_ticket"] is not None:
         print(f"  Mean/ticket      {sp['mean_per_ticket']}")
         print(f"  Median           {sp['median_per_ticket']}")
+        print(f"  Min              {sp['min']}")
+        print(f"  Max              {sp['max']}")
     if sp["missing_count"]:
         print(f"  (missing on {sp['missing_count']} tickets)")
 
     if ct["mean"] is not None:
         print(f"\n── Cycle Time (created → resolved) {'─' * 19}")
-        print(f"  Mean             {ct['mean']} days")
-        print(f"  Median           {ct['median']} days")
-        print(f"  Fastest          {ct['min']} days")
-        print(f"  Slowest          {ct['max']} days")
+        print(f"  Mean             {fmt_duration(ct['mean'])}")
+        print(f"  Median           {fmt_duration(ct['median'])}")
+        print(f"  Fastest          {fmt_duration(ct['min'])}")
+        print(f"  Slowest          {fmt_duration(ct['max'])}")
         print(f"  ({ct['count']} resolved tickets)")
 
     n_epics = sum(1 for e in stats["epics"] if e != "— (no epic)")
@@ -211,10 +226,12 @@ def display(author: str, jira_name: str, stats: dict) -> None:
         print(f"  {short:<50} {n:>3}")
 
     sprints = stats["sprints"]
-    print(f"\n── Sprints {'─' * 43}  {len(sprints)} total")
+    print(f"\n── Sprints (your tickets) {'─' * 28}  {len(sprints)} total")
+    print(f"  {'sprint':<35} {'tickets':>7}   {'pts':>5}")
+    print(f"  {'─' * 35} {'─' * 7}   {'─' * 5}")
     for sprint, s in sprints.items():
         bar = "█" * s["tickets"]
-        print(f"  {sprint:<35} {s['tickets']:>2} tickets  {s['story_points']:>5.1f} pts  {bar}")
+        print(f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}")
 
     print()
 
