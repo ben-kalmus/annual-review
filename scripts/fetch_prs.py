@@ -25,10 +25,15 @@ def main():
     parser.add_argument("--since",  default=START_DATE)
     parser.add_argument("--author", default=None, help="GitHub username (defaults to current authenticated user)")
     parser.add_argument("--output", default=None, help="Output path (default: data/{author}_prs.json)")
+    parser.add_argument("--force",  action="store_true", help="Re-fetch even if output already exists")
     args = parser.parse_args()
 
     author = args.author or current_user()
     output_path = Path(args.output or f"data/{author}_prs.json")
+
+    if output_path.exists() and not args.force:
+        print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
+        return
 
     print(f"Fetching authored PRs for: {author}  (since {args.since})")
 
