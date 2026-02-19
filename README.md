@@ -138,6 +138,9 @@ from the API.
 > **Tip:** "All fields" is important — the strip script selects the relevant columns
 > from the full export. A partial export may be missing Sprint or Story Points.
 
+
+![Instruction image](assets/jira_help.png)
+
 ### Step 2 — Strip and analyse
 
 ```bash
