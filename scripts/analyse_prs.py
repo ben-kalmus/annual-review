@@ -270,17 +270,35 @@ def main():
 
     authored_stats = analyse_authored(prs, author)
 
+    # Warn if --input was customised but --reviewed-input was left as default
+    default_input          = "data/prs.json"
+    default_reviewed_input = "data/reviewed_prs.json"
+    if args.input != default_input and args.reviewed_input == default_reviewed_input:
+        print(
+            f"Warning: --input is set to '{args.input}' but --reviewed-input is still "
+            f"the default ('{default_reviewed_input}'). These may not match the same author. "
+            f"Pass --reviewed-input to be explicit."
+        )
+
     # Load reviewed PRs if the file exists
     reviewed_stats = None
     reviewed_path = Path(args.reviewed_input)
     if reviewed_path.exists():
         reviewed_prs = json.loads(reviewed_path.read_text())
-        # If --author was passed, filter to that reviewer
-        if args.author:
-            reviewed_prs = [
-                pr for pr in reviewed_prs
-                if any(r["author"] == args.author for r in pr.get("your_reviews", []))
-            ]
+
+        # Verify the reviewed file actually contains reviews by the expected author
+        review_authors = {
+            r["author"]
+            for pr in reviewed_prs
+            for r in pr.get("your_reviews", [])
+        }
+        if review_authors and author not in review_authors and author != "unknown":
+            print(
+                f"Warning: '{args.reviewed_input}' does not appear to contain reviews by '{author}'. "
+                f"Found reviewer(s): {', '.join(sorted(review_authors))}. "
+                f"Re-run fetch_reviewed_prs.py --author {author} to generate the correct file."
+            )
+
         reviewed_stats = analyse_reviewed(reviewed_prs, author)
     else:
         print(f"Note: {args.reviewed_input} not found — skipping review activity section.")
