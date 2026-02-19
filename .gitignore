@@ -1,3 +1,4 @@
 data
 JIRA.csv
 scripts/__pycache__
+.env
