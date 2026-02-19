@@ -1,4 +1,4 @@
-assignee = currentUser()
+(assignee = currentUser() OR reporter = currentUser())
   AND status = Done
   AND resolutiondate >= "2025-05-28"
 ORDER BY resolutiondate ASC
