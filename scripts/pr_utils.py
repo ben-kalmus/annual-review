@@ -23,16 +23,11 @@ PR_FIELDS = ",".join([
     "isDraft",
     "createdAt",
     "mergedAt",
-    "closedAt",
     "additions",
     "deletions",
     "changedFiles",
-    "baseRefName",
-    "headRefName",
     "reviewDecision",
     "reviews",
-    "labels",
-    "body",
     "url",
     "author",
 ])
@@ -151,7 +146,6 @@ def fetch_pr(repo: str, number: int) -> dict | None:
         return None
 
     pr["repo"] = repo
-    pr["labels"] = [lb["name"] for lb in pr.get("labels", [])]
     pr["reviews"] = [
         {
             "author": r["author"]["login"],
@@ -185,5 +179,5 @@ def fetch_prs_for_numbers(
         if pr:
             results[(repo, number)] = pr
     if label:
-        print()  # newline after progress
+        print()
     return sorted(results.values(), key=lambda p: p["createdAt"])
