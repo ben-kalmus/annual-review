@@ -176,8 +176,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--author", required=True, help="GitHub login; drives default output path")
     parser.add_argument("--jira-url", default=None, help="Atlassian base URL (env: JIRA_URL)")
-    parser.add_argument("--email", default=None, help="Atlassian account email (env: JIRA_EMAIL)")
-    parser.add_argument("--token", default=None, help="API token (env: JIRA_TOKEN)")
+    parser.add_argument("--email", default=None, help="Your Atlassian account email for auth (env: JIRA_EMAIL)")
+    parser.add_argument("--token", default=None, help="Your API token (env: JIRA_TOKEN)")
+    parser.add_argument("--confluence-email", default=None,
+                        help="Atlassian email of the person to fetch pages for "
+                             "(default: same as --email). Use this to fetch a "
+                             "colleague's pages with your own token.")
     parser.add_argument("--since", default=_DEFAULT_SINCE,
                         help=f"Only include pages touched on or after this date (default: {_DEFAULT_SINCE})")
     parser.add_argument("--output", default=None, help="Output JSON (default: data/{author}_confluence.json)")
@@ -198,17 +202,20 @@ def main():
     auth_header = build_auth_header(email, token)
     since = args.since
 
-    print(f"Fetching Confluence pages for: {email}  (since {since})")
+    target_email = args.confluence_email or email
+    user_cql = f'"{target_email}"'
+
+    print(f"Fetching Confluence pages for: {target_email}  (since {since})")
 
     print("  Fetching created pages...", end=" ", flush=True)
-    created_cql = f'creator = currentUser() AND type = page AND created >= "{since}"'
+    created_cql = f'creator = {user_cql} AND type = page AND created >= "{since}"'
     created = fetch_pages(base_url, auth_header, created_cql, debug=args.debug)
     print(f"{len(created)} found")
 
     print("  Fetching contributed pages (edits to others' pages)...", end=" ", flush=True)
     contributed_cql = (
-        f'contributor = currentUser() AND type = page '
-        f'AND creator != currentUser() AND lastModified >= "{since}"'
+        f'contributor = {user_cql} AND type = page '
+        f'AND creator != {user_cql} AND lastModified >= "{since}"'
     )
     contributed = fetch_pages(base_url, auth_header, contributed_cql, debug=args.debug)
     print(f"{len(contributed)} found")

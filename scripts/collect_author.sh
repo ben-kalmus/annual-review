@@ -12,13 +12,16 @@
 #   ./scripts/collect_author.sh <github-login> --jira --confluence --export-md
 #   ./scripts/collect_author.sh <github-login> --force
 #
-# --jira        Strip JIRA.csv (from repo root) and analyse it.
-#               Input:  JIRA.csv  (must exist in repo root)
-#               Output: data/<author>_jira.csv
-# --confluence  Fetch and analyse Confluence contributions (requires .env creds).
-#               Output: data/<author>_confluence.json
-# --export-md   Generate data/<author>_review.md after all steps succeed.
-# --force       Re-fetch all data even if output files already exist.
+# --jira                  Strip JIRA.csv (from repo root) and analyse it.
+#                         Input:  JIRA.csv  (must exist in repo root)
+#                         Output: data/<author>_jira.csv
+# --confluence            Fetch and analyse Confluence contributions (requires .env creds).
+#                         Output: data/<author>_confluence.json
+# --confluence-email      Atlassian email of the person to fetch Confluence pages for.
+#                         Defaults to JIRA_EMAIL in .env (i.e. yourself).
+#                         Use this to fetch a colleague's pages with your own token.
+# --export-md             Generate data/<author>_review.md after all steps succeed.
+# --force                 Re-fetch all data even if output files already exist.
 
 set -euo pipefail
 
@@ -44,17 +47,19 @@ shift
 SINCE=""
 RUN_JIRA=false
 RUN_CONFLUENCE=false
+CONFLUENCE_EMAIL=""
 EXPORT_MD=false
 FORCE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --jira)       RUN_JIRA=true;       shift ;;
-        --confluence) RUN_CONFLUENCE=true; shift ;;
-        --export-md)  EXPORT_MD=true;      shift ;;
-        --force)      FORCE=true;          shift ;;
-        --since)      SINCE="$2";          shift 2 ;;
-        *)            echo "Unknown argument: $1"; exit 1 ;;
+        --jira)              RUN_JIRA=true;            shift ;;
+        --confluence)        RUN_CONFLUENCE=true;      shift ;;
+        --confluence-email)  CONFLUENCE_EMAIL="$2";    shift 2 ;;
+        --export-md)         EXPORT_MD=true;           shift ;;
+        --force)             FORCE=true;               shift ;;
+        --since)             SINCE="$2";               shift 2 ;;
+        *)                   echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
 
@@ -96,7 +101,9 @@ fi
 if [[ "$RUN_CONFLUENCE" == true ]]; then
     echo ""
     echo "── Fetch: Confluence ────────────────────────────"
-    if python3 "$SCRIPTS/fetch_confluence.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}"; then
+    CONFLUENCE_EMAIL_ARGS=()
+    [[ -n "$CONFLUENCE_EMAIL" ]] && CONFLUENCE_EMAIL_ARGS=(--confluence-email "$CONFLUENCE_EMAIL")
+    if python3 "$SCRIPTS/fetch_confluence.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" "${CONFLUENCE_EMAIL_ARGS[@]}"; then
         CONFLUENCE_OK=true
     else
         echo "  Confluence fetch failed — skipping analysis (check JIRA credentials in .env)."
