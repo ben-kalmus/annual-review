@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, median
 
+from utils import fmt_duration, fmt_int, pct
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,21 +48,6 @@ def days_between(a: str | None, b: str | None) -> float | None:
     return None
 
 
-def fmt_duration(days: float) -> str:
-    """Format a duration: use minutes when under a day, days otherwise."""
-    if days < 1:
-        return f"{days * 24 * 60:.0f} min"
-    return f"{days:.1f} days"
-
-
-def fmt_int(n: int | float) -> str:
-    return f"{n:,.0f}"
-
-
-def pct(n: int | float, total: int | float) -> str:
-    return f"{n / total * 100:.0f}%" if total else "0%"
-
-
 def all_sprints(row: dict) -> list[str]:
     """Return all non-empty sprint values for a ticket."""
     sprints = []
@@ -71,12 +58,12 @@ def all_sprints(row: dict) -> list[str]:
     return sprints
 
 
-def story_points(row: dict) -> float | None:
+def story_points(row: dict) -> int | None:
     raw = row.get("Custom field (Story Points)", "").strip()
     if not raw:
         return None
     try:
-        return float(raw)
+        return int(float(raw))
     except ValueError:
         return None
 
@@ -136,15 +123,15 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
 
     # Sprint breakdown — tickets and story points per sprint, sorted by name
     sprint_tickets: Counter = Counter()
-    sprint_sp: dict[str, float] = {}
+    sprint_sp: dict[str, int] = {}
     for r in assigned_rows:
         sp = story_points(r)
         for s in all_sprints(r):
             sprint_tickets[s] += 1
-            sprint_sp[s] = sprint_sp.get(s, 0.0) + (sp or 0.0)
+            sprint_sp[s] = sprint_sp.get(s, 0) + (sp or 0)
 
     sprints = {
-        s: {"tickets": sprint_tickets[s], "story_points": round(sprint_sp.get(s, 0), 1)}
+        s: {"tickets": sprint_tickets[s], "story_points": sprint_sp.get(s, 0)}
         for s in sorted(sprint_tickets)
     }
 
@@ -162,11 +149,11 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
         "by_priority": dict(by_priority.most_common()),
         "by_project": dict(by_project.most_common()),
         "story_points": {
-            "total": round(sp_total, 1),
+            "total": sp_total,
             "mean_per_ticket": round(mean(sp_values), 1) if sp_values else None,
             "median_per_ticket": round(median(sp_values), 1) if sp_values else None,
-            "min": round(min(sp_values), 1) if sp_values else None,
-            "max": round(max(sp_values), 1) if sp_values else None,
+            "min": min(sp_values) if sp_values else None,
+            "max": max(sp_values) if sp_values else None,
             "missing_count": sp_missing,
         },
         "cycle_time_days": {
@@ -253,9 +240,12 @@ def display(
     print(f"\n── Sprints ({section}) {'─' * (34 - len(section))}  {len(sprints)} total")
 
     if has_totals:
-        print(f"  {'sprint':<35} {'mine':>4}  {'team':>4}  {'%':>4}")
-        print(f"  {'─' * 35} {'─' * 4}  {'─' * 4}  {'─' * 4}")
+        print(
+            f"  {'sprint':<35} {'my tkts':>7}  {'team tkts':>9}  {'tkts %':>6}  {'my pts':>6}"
+        )
+        print(f"  {'─' * 35} {'─' * 7}  {'─' * 9}  {'─' * 6}  {'─' * 6}")
         for sprint, s in sprints.items():
+            pts = f"{s['story_points']:>5}" if s["story_points"] else "    —"
             if sprint in sprint_totals:
                 tot = sprint_totals[sprint]
                 t_tkts = tot["total_tickets"]
@@ -263,11 +253,11 @@ def display(
                 filled = round(ratio * 20)  # bar scaled to 20 chars = 100%
                 bar = "█" * filled + "░" * (20 - filled)
                 print(
-                    f"  {sprint:<35} {s['tickets']:>4}  {t_tkts:>4}  {pct(s['tickets'], t_tkts):>4}  {bar}"
+                    f"  {sprint:<35} {s['tickets']:>7}  {t_tkts:>9}  {pct(s['tickets'], t_tkts):>6}  {pts:>6}  {bar}"
                 )
             else:
                 print(
-                    f"  {sprint:<35} {s['tickets']:>4}   {'?':>4}   {'?':>4}  (no totals)"
+                    f"  {sprint:<35} {s['tickets']:>7}  {'?':>9}  {'?':>6}  {pts:>6}  (no totals)"
                 )
     else:
         print(f"  {'sprint':<35} {'tickets':>7}   {'pts':>5}")
@@ -275,7 +265,7 @@ def display(
         for sprint, s in sprints.items():
             bar = "█" * s["tickets"]
             print(
-                f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5.1f}  {bar}"
+                f"  {sprint:<35} {s['tickets']:>7}   {s['story_points']:>5}  {bar}"
             )
 
     print()

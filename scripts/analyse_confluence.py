@@ -19,21 +19,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import mean, median
 
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-
-def fmt_int(n: int | float) -> str:
-    return f"{n:,.0f}"
-
-
-def pct(n: int | float, total: int | float) -> str:
-    return f"{n / total * 100:.0f}%" if total else "0%"
-
-
-def bar(ratio: float, width: int = 20) -> str:
-    filled = round(min(ratio, 1.0) * width)
-    return "█" * filled + "░" * (width - filled)
+from utils import bar, fmt_int, pct
 
 
 def space_label(key: str) -> tuple[str, str]:
@@ -176,7 +162,8 @@ def _print_page_list(heading: str, pages: list[dict], show_version: bool = False
         print(f"  {'space':<8}  {'title':<60}  {'date'}")
         print(f"  {'─' * 8}  {'─' * 60}  {'─' * 10}")
 
-    for p in sorted(pages, key=lambda x: x.get("created", ""), reverse=True):
+    sort_field = "created" if show_version else "last_modified"
+    for p in sorted(pages, key=lambda x: x.get(sort_field) or "", reverse=True):
         space = (p.get("space") or "")[:8]
         title = p.get("title") or ""
         date = (p.get("created") or "")[:10]

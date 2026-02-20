@@ -21,8 +21,11 @@ from datetime import datetime
 from pathlib import Path
 from statistics import mean, median
 
+from utils import fmt_duration, fmt_int, pct
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def parse_dt(s: str | None) -> datetime | None:
     if not s:
@@ -37,56 +40,56 @@ def days_between(a: str | None, b: str | None) -> float | None:
     return None
 
 
-def pct(n: int, total: int) -> str:
-    return f"{n / total * 100:.0f}%" if total else "0%"
-
-
-def fmt_int(n: int) -> str:
-    return f"{n:,}"
-
-
 # ── core analysis ─────────────────────────────────────────────────────────────
+
 
 def analyse_authored(prs: list[dict], author: str) -> dict:
     """Stats derived from PRs where this person is the author."""
     total = len(prs)
     merged = [pr for pr in prs if pr.get("mergedAt")]
-    open_  = [pr for pr in prs if pr["state"] == "OPEN"]
+    open_ = [pr for pr in prs if pr["state"] == "OPEN"]
     closed = [pr for pr in prs if pr["state"] == "CLOSED" and not pr.get("mergedAt")]
     drafts = [pr for pr in prs if pr.get("isDraft")]
 
     # Code churn
     additions = sum(pr.get("additions", 0) or 0 for pr in prs)
     deletions = sum(pr.get("deletions", 0) or 0 for pr in prs)
-    churn     = additions + deletions
-    net       = additions - deletions
-    files     = sum(pr.get("changedFiles", 0) or 0 for pr in prs)
+    churn = additions + deletions
+    net = additions - deletions
+    files = sum(pr.get("changedFiles", 0) or 0 for pr in prs)
 
     # Per-PR size buckets
     def size_bucket(pr):
         c = (pr.get("additions") or 0) + (pr.get("deletions") or 0)
-        if c <= 50:   return "XS (≤50)"
-        if c <= 200:  return "S (51-200)"
-        if c <= 500:  return "M (201-500)"
-        if c <= 1000: return "L (501-1000)"
+        if c <= 50:
+            return "XS (≤50)"
+        if c <= 200:
+            return "S (51-200)"
+        if c <= 500:
+            return "M (201-500)"
+        if c <= 1000:
+            return "L (501-1000)"
         return "XL (>1000)"
 
     size_dist = Counter(size_bucket(pr) for pr in prs)
 
     # Time to merge (calendar days)
     ttm = [
-        d for pr in merged
+        d
+        for pr in merged
         if (d := days_between(pr.get("createdAt"), pr.get("mergedAt"))) is not None
     ]
 
     # Repo breakdown
-    repo_stats = defaultdict(lambda: {"prs": 0, "additions": 0, "deletions": 0, "files": 0})
+    repo_stats = defaultdict(
+        lambda: {"prs": 0, "additions": 0, "deletions": 0, "files": 0}
+    )
     for pr in prs:
         r = pr["repo"]
-        repo_stats[r]["prs"]       += 1
+        repo_stats[r]["prs"] += 1
         repo_stats[r]["additions"] += pr.get("additions", 0) or 0
         repo_stats[r]["deletions"] += pr.get("deletions", 0) or 0
-        repo_stats[r]["files"]     += pr.get("changedFiles", 0) or 0
+        repo_stats[r]["files"] += pr.get("changedFiles", 0) or 0
 
     # How your PRs were received by reviewers (reviewDecision on merged PRs)
     received_decisions = Counter(pr.get("reviewDecision") or "NONE" for pr in merged)
@@ -100,28 +103,28 @@ def analyse_authored(prs: list[dict], author: str) -> dict:
 
     return {
         "totals": {
-            "prs":    total,
+            "prs": total,
             "merged": len(merged),
-            "open":   len(open_),
+            "open": len(open_),
             "closed": len(closed),
-            "draft":  len(drafts),
+            "draft": len(drafts),
         },
         "churn": {
             "additions": additions,
             "deletions": deletions,
-            "net":       net,
-            "total":     churn,
-            "files":     files,
+            "net": net,
+            "total": churn,
+            "files": files,
             "avg_additions_per_pr": round(additions / total, 1) if total else 0,
             "avg_deletions_per_pr": round(deletions / total, 1) if total else 0,
-            "avg_files_per_pr":     round(files / total, 1) if total else 0,
+            "avg_files_per_pr": round(files / total, 1) if total else 0,
         },
         "size_distribution": dict(size_dist),
         "time_to_merge_days": {
-            "mean":   round(mean(ttm), 1) if ttm else None,
-            "median": round(median(ttm), 1) if ttm else None,
-            "min":    round(min(ttm), 1) if ttm else None,
-            "max":    round(max(ttm), 1) if ttm else None,
+            "mean": mean(ttm) if ttm else None,
+            "median": median(ttm) if ttm else None,
+            "min": min(ttm) if ttm else None,
+            "max": max(ttm) if ttm else None,
         },
         "repos": {
             repo: dict(s)
@@ -148,7 +151,9 @@ def analyse_reviewed(reviewed_prs: list[dict], reviewer: str) -> dict:
     for pr in reviewed_prs:
         if not pr.get("your_reviews"):
             continue
-        strongest = max(pr["your_reviews"], key=lambda r: verdict_order.get(r["state"], 0))
+        strongest = max(
+            pr["your_reviews"], key=lambda r: verdict_order.get(r["state"], 0)
+        )
         prs_by_verdict[strongest["state"]] += 1
 
     # Authors whose PRs you reviewed most
@@ -171,9 +176,10 @@ def analyse_reviewed(reviewed_prs: list[dict], reviewer: str) -> dict:
 
 # ── display ───────────────────────────────────────────────────────────────────
 
+
 def display(author: str, authored: dict, reviewed: dict | None) -> None:
-    t   = authored["totals"]
-    c   = authored["churn"]
+    t = authored["totals"]
+    c = authored["churn"]
     ttm = authored["time_to_merge_days"]
 
     print(f"\n{'═' * 55}")
@@ -194,24 +200,34 @@ def display(author: str, authored: dict, reviewed: dict | None) -> None:
     print(f"  Net          {'+' if c['net'] >= 0 else ''}{fmt_int(c['net'])}")
     print(f"  Total churn  {fmt_int(c['total'])} lines")
     print(f"  Files        {fmt_int(c['files'])} changed")
-    print(f"  Per PR avg   +{c['avg_additions_per_pr']} / -{c['avg_deletions_per_pr']} lines, {c['avg_files_per_pr']} files")
+    print(
+        f"  Per PR avg   +{c['avg_additions_per_pr']} / -{c['avg_deletions_per_pr']} lines, {c['avg_files_per_pr']} files"
+    )
 
     print(f"\n── PR Size Distribution {'─' * 31}")
-    for bucket in ["XS (≤50)", "S (51-200)", "M (201-500)", "L (501-1000)", "XL (>1000)"]:
+    for bucket in [
+        "XS (≤50)",
+        "S (51-200)",
+        "M (201-500)",
+        "L (501-1000)",
+        "XL (>1000)",
+    ]:
         n = authored["size_distribution"].get(bucket, 0)
         print(f"  {bucket:<15} {n:>3}  {'█' * n}")
 
     if ttm["mean"] is not None:
         print(f"\n── Time to Merge {'─' * 38}")
-        print(f"  Mean         {ttm['mean']} days")
-        print(f"  Median       {ttm['median']} days")
-        print(f"  Fastest      {ttm['min']} days")
-        print(f"  Slowest      {ttm['max']} days")
+        print(f"  Mean         {fmt_duration(ttm['mean'])}")
+        print(f"  Median       {fmt_duration(ttm['median'])}")
+        print(f"  Fastest      {fmt_duration(ttm['min'])}")
+        print(f"  Slowest      {fmt_duration(ttm['max'])}")
 
     print(f"\n── Repositories {'─' * 39}")
     for repo, s in authored["repos"].items():
         short = repo.split("/")[-1]
-        print(f"  {short:<35} {s['prs']:>3} PRs  +{fmt_int(s['additions'])} / -{fmt_int(s['deletions'])}")
+        print(
+            f"  {short:<35} {s['prs']:>3} PRs  +{fmt_int(s['additions'])} / -{fmt_int(s['deletions'])}"
+        )
 
     print(f"\n── How Your PRs Were Received (merged) {'─' * 16}")
     for decision, n in authored["received_decisions"].items():
@@ -219,7 +235,7 @@ def display(author: str, authored: dict, reviewed: dict | None) -> None:
 
     print(f"\n── Who Reviewed Your Work {'─' * 29}")
     for reviewer, n in authored["top_reviewers_of_your_work"].items():
-        print(f"  {reviewer:<30} {n} reviews")
+        print(f"  {reviewer:<30} {n} review msgs")
 
     if reviewed:
         rv = reviewed
@@ -243,22 +259,47 @@ def display(author: str, authored: dict, reviewed: dict | None) -> None:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",          default=None, help="Authored PRs JSON (default: data/{author}_prs.json)")
-    parser.add_argument("--reviewed-input", default=None, help="Reviewed PRs JSON (default: data/{author}_reviewed_prs.json)")
-    parser.add_argument("--author",         default=None,                      help="Filter to this author login")
-    parser.add_argument("--output",         default=None,                      help="Also write stats JSON to this path")
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="Authored PRs JSON (default: data/{author}_prs.json)",
+    )
+    parser.add_argument(
+        "--reviewed-input",
+        default=None,
+        help="Reviewed PRs JSON (default: data/{author}_reviewed_prs.json)",
+    )
+    parser.add_argument("--author", default=None, help="Filter to this author login")
+    parser.add_argument(
+        "--output", default=None, help="Also write stats JSON to this path"
+    )
     args = parser.parse_args()
 
     author = args.author
 
     # Derive file paths from author when not explicitly provided
-    input_path          = Path(args.input)          if args.input          else Path(f"data/{author}_prs.json")          if author else None
-    reviewed_input_path = Path(args.reviewed_input) if args.reviewed_input else Path(f"data/{author}_reviewed_prs.json") if author else None
+    input_path = (
+        Path(args.input)
+        if args.input
+        else Path(f"data/{author}_prs.json")
+        if author
+        else None
+    )
+    reviewed_input_path = (
+        Path(args.reviewed_input)
+        if args.reviewed_input
+        else Path(f"data/{author}_reviewed_prs.json")
+        if author
+        else None
+    )
 
     if input_path is None:
-        parser.error("Pass --author <login> or --input <path> to specify whose data to analyse.")
+        parser.error(
+            "Pass --author <login> or --input <path> to specify whose data to analyse."
+        )
 
     prs = json.loads(input_path.read_text())
 
@@ -269,7 +310,9 @@ def main():
             author = authors.pop()
             reviewed_input_path = Path(f"data/{author}_reviewed_prs.json")
         elif len(authors) == 0:
-            print("Warning: no 'author' field in PR data. Re-run fetch_prs.py or pass --author.")
+            print(
+                "Warning: no 'author' field in PR data. Re-run fetch_prs.py or pass --author."
+            )
             author = "unknown"
         else:
             print(f"Multiple authors found: {authors}. Pass --author to filter.")
@@ -294,9 +337,7 @@ def main():
 
         # Verify the reviewed file actually contains reviews by the expected author
         review_authors = {
-            r["author"]
-            for pr in reviewed_prs
-            for r in pr.get("your_reviews", [])
+            r["author"] for pr in reviewed_prs for r in pr.get("your_reviews", [])
         }
         if review_authors and author not in review_authors and author != "unknown":
             print(
@@ -314,7 +355,16 @@ def main():
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({"author": author, "authored": authored_stats, "reviewed": reviewed_stats}, indent=2))
+        out.write_text(
+            json.dumps(
+                {
+                    "author": author,
+                    "authored": authored_stats,
+                    "reviewed": reviewed_stats,
+                },
+                indent=2,
+            )
+        )
         print(f"Stats written to: {args.output}")
 
 
