@@ -73,13 +73,13 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 
 ```bash
 # GitHub PRs only
-./scripts/collect_author.sh <github-login> --since 2025-01-01
+./scripts/collect_author.sh <github-login> --org my-company --since 2025-01-01
 
 # GitHub PRs + JIRA + Confluence + Markdown export
-./scripts/collect_author.sh <github-login> --since 2025-01-01 --jira --confluence --export-md
+./scripts/collect_author.sh <github-login> --org my-company --since 2025-01-01 --jira --confluence --export-md
 
 # Re-fetch everything from scratch (ignore cache)
-./scripts/collect_author.sh <github-login> --since 2025-01-01 --jira --confluence --export-md --force
+./scripts/collect_author.sh <github-login> --org my-company --since 2025-01-01 --jira --confluence --export-md --force
 ```
 
 **Flags:**
@@ -116,9 +116,9 @@ data/<login>_review.md              (--export-md)
 ### Running manually
 
 ```bash
-python3 scripts/fetch_prs.py --author <login> --since 2025-01-01
-python3 scripts/fetch_reviewed_prs.py --author <login> --since 2025-01-01
-python3 scripts/analyse_prs.py --author <login>
+python3 scripts/fetch_prs.py --author <login> --org my-company --since 2025-01-01
+python3 scripts/fetch_reviewed_prs.py --author <login> --org my-company --since 2025-01-01
+python3 scripts/analyse_prs.py --author <login> --org my-company
 ```
 
 The default `--since` date is set in `scripts/pr_utils.py` — update `START_DATE` for your
