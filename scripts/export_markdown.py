@@ -7,9 +7,9 @@ Reads from cached data files in data/. Run fetch + analyse scripts first,
 or use collect_author.sh --jira to populate everything in one go.
 
 Usage:
-    python3 scripts/export_markdown.py --author ben-kalmus
-    python3 scripts/export_markdown.py --author ben-kalmus --output review.md
-    python3 scripts/export_markdown.py --author ben-kalmus --since 2025-05-28
+    python3 scripts/export_markdown.py --author <your-login>
+    python3 scripts/export_markdown.py --author <your-login> --output review.md
+    python3 scripts/export_markdown.py --author <your-login> --since 2025-05-28
 """
 
 import argparse

@@ -7,9 +7,9 @@ Sections:
   Created Page Versions · Pages Created · Pages Edited
 
 Usage:
-    python3 scripts/analyse_confluence.py --author ben-kalmus
-    python3 scripts/analyse_confluence.py --input data/ben-kalmus_confluence.json
-    python3 scripts/analyse_confluence.py --input data/ben-kalmus_confluence.json --output data/confluence_stats.json
+    python3 scripts/analyse_confluence.py --author <your-login>
+    python3 scripts/analyse_confluence.py --input data/<your-login>_confluence.json
+    python3 scripts/analyse_confluence.py --input data/<your-login>_confluence.json --output data/confluence_stats.json
 """
 
 import argparse

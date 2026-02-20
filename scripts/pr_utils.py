@@ -86,13 +86,15 @@ def current_user() -> str:
     return gh("api", "user")["login"]
 
 
-def discover_repos(query: str, since: str, org: str = "algolia") -> list[str]:
+def discover_repos(query: str, since: str, org: str | None = None) -> list[str]:
     """
-    Discover all repos containing PRs matching `query` since `since`,
-    filtered to the given GitHub organisation.
+    Discover all repos containing PRs matching `query` since `since`.
+    If `org` is given, only repos belonging to that GitHub organisation are
+    returned. If omitted, all repos (including personal and cross-org) are
+    included.
 
     Uses the search API so no hardcoded repo list is needed.
-    Returns a sorted list of 'org/repo' strings.
+    Returns a sorted list of 'owner/repo' strings.
     """
     repos: set[str] = set()
     page = 1
@@ -104,7 +106,7 @@ def discover_repos(query: str, since: str, org: str = "algolia") -> list[str]:
             break
         for item in items:
             repo = item["repository_url"].removeprefix("https://api.github.com/repos/")
-            if repo.startswith(f"{org}/"):
+            if org is None or repo.startswith(f"{org}/"):
                 repos.add(repo)
         if len(items) < 100:
             break
@@ -127,7 +129,7 @@ def search_pr_numbers(query: str, since: str) -> list[tuple[str, int]]:
         if not items:
             break
         for item in items:
-            # repo_url like https://api.github.com/repos/algolia/metis
+            # repo_url like https://api.github.com/repos/owner/repo-name
             repo = item["repository_url"].removeprefix("https://api.github.com/repos/")
             results.append((repo, item["number"]))
         if len(items) < 100:

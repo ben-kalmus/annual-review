@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Fetch all PRs reviewed by a GitHub user across all repos in the algolia org
-since the employment start date. Repos are discovered dynamically — no
-hardcoded list required. Own PRs are excluded.
+Fetch all PRs reviewed by a GitHub user. Repos are discovered dynamically
+via the GitHub search API — no hardcoded list required. Own PRs are excluded.
 
 The `your_reviews` field on each PR contains only the reviews left by the
 specified author, making it easy to see APPROVED / CHANGES_REQUESTED /
@@ -13,7 +12,8 @@ Output: data/{author}_reviewed_prs.json
 Usage:
     python3 scripts/fetch_reviewed_prs.py
     python3 scripts/fetch_reviewed_prs.py --since 2025-05-28
-    python3 scripts/fetch_reviewed_prs.py --author some-colleague
+    python3 scripts/fetch_reviewed_prs.py --author <github-login>
+    python3 scripts/fetch_reviewed_prs.py --org my-company
     python3 scripts/fetch_reviewed_prs.py --output path/to/custom.json
 """
 
@@ -28,6 +28,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--since",  default=START_DATE)
     parser.add_argument("--author", default=None, help="GitHub username (defaults to current authenticated user)")
+    parser.add_argument("--org",    default=None, help="Limit results to this GitHub org (e.g. my-company). Omit to include all orgs.")
     parser.add_argument("--output", default=None, help="Output path (default: data/{author}_reviewed_prs.json)")
     parser.add_argument("--force",  action="store_true", help="Re-fetch even if output already exists")
     args = parser.parse_args()
@@ -42,7 +43,7 @@ def main():
     print(f"Fetching PRs reviewed by: {author}  (since {args.since})")
 
     print("Discovering repos...", end=" ", flush=True)
-    repos = discover_repos(f"reviewed-by:{author}+-author:{author}", args.since)
+    repos = discover_repos(f"reviewed-by:{author}+-author:{author}", args.since, org=args.org)
     print(f"{len(repos)} repos found: {', '.join(r.split('/')[1] for r in repos)}")
 
     all_numbers: list[tuple[str, int]] = []

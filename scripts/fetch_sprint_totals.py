@@ -13,13 +13,13 @@ Output: data/{author}_sprint_totals.json
   }
 
 Usage:
-    python3 scripts/fetch_sprint_totals.py --author ben-kalmus
-    python3 scripts/fetch_sprint_totals.py --author ben-kalmus --force
-    python3 scripts/fetch_sprint_totals.py --author ben-kalmus --sp-field customfield_10028
+    python3 scripts/fetch_sprint_totals.py --author <your-login>
+    python3 scripts/fetch_sprint_totals.py --author <your-login> --force
+    python3 scripts/fetch_sprint_totals.py --author <your-login> --sp-field customfield_10028
 
 Auth (all three required — flag overrides env var):
-    export JIRA_URL=https://algolia.atlassian.net
-    export JIRA_EMAIL=you@algolia.com
+    export JIRA_URL=https://your-org.atlassian.net
+    export JIRA_EMAIL=you@your-org.com
     export JIRA_TOKEN=<your-api-token>
 """
 

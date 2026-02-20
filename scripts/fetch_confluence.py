@@ -9,13 +9,13 @@ Produces two lists:
 Output: data/{author}_confluence.json
 
 Usage:
-    python3 scripts/fetch_confluence.py --author ben-kalmus
-    python3 scripts/fetch_confluence.py --author ben-kalmus --since 2025-01-01
-    python3 scripts/fetch_confluence.py --author ben-kalmus --force
+    python3 scripts/fetch_confluence.py --author <your-login>
+    python3 scripts/fetch_confluence.py --author <your-login> --since 2025-01-01
+    python3 scripts/fetch_confluence.py --author <your-login> --force
 
 Auth (all three required — flag overrides env var):
-    export JIRA_URL=https://algolia.atlassian.net
-    export JIRA_EMAIL=you@algolia.com
+    export JIRA_URL=https://your-org.atlassian.net
+    export JIRA_EMAIL=you@your-org.com
     export JIRA_TOKEN=<your-api-token>
 """
 

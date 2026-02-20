@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Fetch all PRs authored by a GitHub user across all repos in the algolia org
-since the employment start date. Repos are discovered dynamically — no
-hardcoded list required.
+Fetch all PRs authored by a GitHub user. Repos are discovered dynamically
+via the GitHub search API — no hardcoded list required.
 
 Output: data/{author}_prs.json
 
 Usage:
     python3 scripts/fetch_prs.py
     python3 scripts/fetch_prs.py --since 2025-05-28
-    python3 scripts/fetch_prs.py --author some-colleague
+    python3 scripts/fetch_prs.py --author <github-login>
+    python3 scripts/fetch_prs.py --org my-company
     python3 scripts/fetch_prs.py --output path/to/custom.json
 """
 
@@ -24,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--since",  default=START_DATE)
     parser.add_argument("--author", default=None, help="GitHub username (defaults to current authenticated user)")
+    parser.add_argument("--org",    default=None, help="Limit results to this GitHub org (e.g. my-company). Omit to include all orgs.")
     parser.add_argument("--output", default=None, help="Output path (default: data/{author}_prs.json)")
     parser.add_argument("--force",  action="store_true", help="Re-fetch even if output already exists")
     args = parser.parse_args()
@@ -38,7 +39,7 @@ def main():
     print(f"Fetching authored PRs for: {author}  (since {args.since})")
 
     print("Discovering repos...", end=" ", flush=True)
-    repos = discover_repos(f"author:{author}", args.since)
+    repos = discover_repos(f"author:{author}", args.since, org=args.org)
     print(f"{len(repos)} repos found: {', '.join(r.split('/')[1] for r in repos)}")
 
     all_numbers: list[tuple[str, int]] = []

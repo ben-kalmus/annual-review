@@ -8,8 +8,8 @@ and sprint breakdown — all detail sections scoped to tickets assigned to you.
 
 Usage:
     python3 scripts/analyse_jira.py --author user-name
-    python3 scripts/analyse_jira.py --input data/ben-kalmus_jira.csv
-    python3 scripts/analyse_jira.py --input data/ben-kalmus_jira.csv --output data/jira_stats.json
+    python3 scripts/analyse_jira.py --input data/<your-login>_jira.csv
+    python3 scripts/analyse_jira.py --input data/<your-login>_jira.csv --output data/jira_stats.json
 """
 
 import argparse

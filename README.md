@@ -87,8 +87,10 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 | Flag | Description |
 |---|---|
 | `--since YYYY-MM-DD` | Only include activity from this date onwards |
+| `--org <github-org>` | Limit PR discovery to this GitHub org (e.g. `my-company`). Omit to include all orgs. |
 | `--jira` | Strip `JIRA.csv` and run JIRA analysis (requires `JIRA.csv` in repo root — see below) |
 | `--confluence` | Fetch and analyse Confluence contributions (requires `.env` credentials) |
+| `--confluence-email` | Atlassian email of the person to fetch Confluence pages for (default: `JIRA_EMAIL`) |
 | `--export-md` | Generate `data/<login>_review.md` after all steps complete |
 | `--force` | Re-fetch all data even if cached output files already exist |
 

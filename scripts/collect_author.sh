@@ -9,9 +9,11 @@
 #   ./scripts/collect_author.sh <github-login> --since 2025-01-01
 #   ./scripts/collect_author.sh <github-login> --jira
 #   ./scripts/collect_author.sh <github-login> --confluence
-#   ./scripts/collect_author.sh <github-login> --jira --confluence --export-md
+#   ./scripts/collect_author.sh <github-login> --org my-company --jira --confluence --export-md
 #   ./scripts/collect_author.sh <github-login> --force
 #
+# --org                   GitHub org to limit PR discovery to (e.g. my-company).
+#                         Omit to include all orgs the user has activity in.
 # --jira                  Strip JIRA.csv (from repo root) and analyse it.
 #                         Input:  JIRA.csv  (must exist in repo root)
 #                         Output: data/<author>_jira.csv
@@ -45,6 +47,7 @@ AUTHOR="$1"
 shift
 
 SINCE=""
+ORG=""
 RUN_JIRA=false
 RUN_CONFLUENCE=false
 CONFLUENCE_EMAIL=""
@@ -59,12 +62,16 @@ while [[ $# -gt 0 ]]; do
         --export-md)         EXPORT_MD=true;           shift ;;
         --force)             FORCE=true;               shift ;;
         --since)             SINCE="$2";               shift 2 ;;
+        --org)               ORG="$2";                 shift 2 ;;
         *)                   echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
 
 SINCE_ARGS=()
 [[ -n "$SINCE" ]] && SINCE_ARGS=(--since "$SINCE")
+
+ORG_ARGS=()
+[[ -n "$ORG" ]] && ORG_ARGS=(--org "$ORG")
 
 FORCE_ARG=()
 [[ "$FORCE" == true ]] && FORCE_ARG=(--force)
@@ -79,9 +86,9 @@ echo "════════════════════════�
 
 echo ""
 echo "── Fetch: PRs (parallel) ────────────────────────"
-python3 "$SCRIPTS/fetch_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" &
+python3 "$SCRIPTS/fetch_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
 PID_AUTHORED=$!
-python3 "$SCRIPTS/fetch_reviewed_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" &
+python3 "$SCRIPTS/fetch_reviewed_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
 PID_REVIEWED=$!
 
 wait $PID_AUTHORED || { echo "Error: fetch_prs.py failed"; exit 1; }
