@@ -64,77 +64,68 @@ SINCE_ARGS=()
 FORCE_ARG=()
 [[ "$FORCE" == true ]] && FORCE_ARG=(--force)
 
+CONFLUENCE_OK=false
+
 echo "════════════════════════════════════════════════"
 echo "  Collecting data for: $AUTHOR"
 echo "════════════════════════════════════════════════"
 
-echo ""
-echo "── Steps 1+2 (parallel): Fetching PRs ──────────"
+# ── Fetch ─────────────────────────────────────────
 
+echo ""
+echo "── Fetch: PRs (parallel) ────────────────────────"
 python3 "$SCRIPTS/fetch_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" &
 PID_AUTHORED=$!
 python3 "$SCRIPTS/fetch_reviewed_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" &
 PID_REVIEWED=$!
 
-wait $PID_AUTHORED || {
-    echo "Error: fetch_prs.py failed"
-    exit 1
-}
-wait $PID_REVIEWED || {
-    echo "Error: fetch_reviewed_prs.py failed"
-    exit 1
-}
-
-echo ""
-echo "── Step 3: PR Analysis ──────────────────────────"
-python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR"
+wait $PID_AUTHORED || { echo "Error: fetch_prs.py failed"; exit 1; }
+wait $PID_REVIEWED || { echo "Error: fetch_reviewed_prs.py failed"; exit 1; }
 
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
-    echo "── Step 4: JIRA Strip ───────────────────────────"
+    echo "── Fetch: JIRA strip ────────────────────────────"
     bash "$SCRIPTS/strip_jira.sh" --author "$AUTHOR"
 
     echo ""
-    if [[ -n "${JIRA_TOKEN:-}" ]]; then
-        if [[ -z "${JIRA_URL:-}" || -z "${JIRA_EMAIL:-}" ]]; then
-            echo "── Step 5: Sprint Totals ─────────────────────────"
-            echo "  Warning: JIRA_TOKEN is set but JIRA_URL or JIRA_EMAIL is missing — skipping."
-            echo ""
-            echo "── Step 5: JIRA Analysis ────────────────────────"
-            python3 "$SCRIPTS/analyse_jira.py" --author "$AUTHOR"
-        else
-            echo "── Step 5: Fetch Sprint Totals (JIRA API) ───────"
-            python3 "$SCRIPTS/fetch_sprint_totals.py" --author "$AUTHOR" "${FORCE_ARG[@]}"
-            echo ""
-            echo "── Step 6: JIRA Analysis ────────────────────────"
-            python3 "$SCRIPTS/analyse_jira.py" --author "$AUTHOR"
-        fi
-    else
-        echo "── Step 5: Sprint Totals ─────────────────────────"
-        echo "  Skipped — set JIRA_TOKEN, JIRA_URL, JIRA_EMAIL to enable contribution %."
-        echo ""
-        echo "── Step 5: JIRA Analysis ────────────────────────"
-        python3 "$SCRIPTS/analyse_jira.py" --author "$AUTHOR"
-    fi
+    echo "── Fetch: Sprint Totals ─────────────────────────"
+    python3 "$SCRIPTS/fetch_sprint_totals.py" --author "$AUTHOR" "${FORCE_ARG[@]}" \
+        || echo "  Sprint totals unavailable — continuing without (check JIRA credentials in .env)."
 fi
 
 if [[ "$RUN_CONFLUENCE" == true ]]; then
     echo ""
-    if [[ -n "${JIRA_TOKEN:-}" && -n "${JIRA_URL:-}" && -n "${JIRA_EMAIL:-}" ]]; then
-        echo "── Confluence Fetch ─────────────────────────────"
-        python3 "$SCRIPTS/fetch_confluence.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}"
-        echo ""
-        echo "── Confluence Analysis ──────────────────────────"
-        python3 "$SCRIPTS/analyse_confluence.py" --author "$AUTHOR"
+    echo "── Fetch: Confluence ────────────────────────────"
+    if python3 "$SCRIPTS/fetch_confluence.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}"; then
+        CONFLUENCE_OK=true
     else
-        echo "── Confluence ───────────────────────────────────"
-        echo "  Skipped — set JIRA_TOKEN, JIRA_URL, JIRA_EMAIL in .env to enable."
+        echo "  Confluence fetch failed — skipping analysis (check JIRA credentials in .env)."
     fi
 fi
 
+# ── Analyse ───────────────────────────────────────
+
+echo ""
+echo "── Analyse: PRs ─────────────────────────────────"
+python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR"
+
+if [[ "$RUN_JIRA" == true ]]; then
+    echo ""
+    echo "── Analyse: JIRA ────────────────────────────────"
+    python3 "$SCRIPTS/analyse_jira.py" --author "$AUTHOR"
+fi
+
+if [[ "$CONFLUENCE_OK" == true ]]; then
+    echo ""
+    echo "── Analyse: Confluence ──────────────────────────"
+    python3 "$SCRIPTS/analyse_confluence.py" --author "$AUTHOR"
+fi
+
+# ── Export ────────────────────────────────────────
+
 if [[ "$EXPORT_MD" == true ]]; then
     echo ""
-    echo "── Markdown Export ──────────────────────────────"
+    echo "── Export: Markdown ─────────────────────────────"
     python3 "$SCRIPTS/export_markdown.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
 fi
 
@@ -145,13 +136,9 @@ echo "    ${AUTHOR}_prs.json"
 echo "    ${AUTHOR}_reviewed_prs.json"
 if [[ "$RUN_JIRA" == true ]]; then
     echo "    ${AUTHOR}_jira.csv"
-    if [[ -n "${JIRA_TOKEN:-}" && -n "${JIRA_URL:-}" && -n "${JIRA_EMAIL:-}" ]]; then
-        echo "    ${AUTHOR}_sprint_totals.json"
-    fi
+    [[ -f "data/${AUTHOR}_sprint_totals.json" ]] && echo "    ${AUTHOR}_sprint_totals.json"
 fi
-if [[ "$RUN_CONFLUENCE" == true && -n "${JIRA_TOKEN:-}" && -n "${JIRA_URL:-}" && -n "${JIRA_EMAIL:-}" ]]; then
-    echo "    ${AUTHOR}_confluence.json"
-fi
+[[ -f "data/${AUTHOR}_confluence.json" ]] && echo "    ${AUTHOR}_confluence.json"
 if [[ "$EXPORT_MD" == true ]]; then
     echo "    ${AUTHOR}_review.md"
 fi
