@@ -1,7 +1,15 @@
 # Annual Review Toolkit
 
-Scripts for generating quantitative data for a GitHub/JIRA-based annual performance review.
-Covers GitHub PR activity, JIRA ticket work, and Confluence contributions.
+Scripts for generating quantitative data for an annual performance review.
+Pulls GitHub PR activity, JIRA ticket work, and Confluence contributions into
+a single Markdown report you can paste directly into Confluence or Notion.
+
+**What you get:**
+- PR counts, merge rate, code churn, time-to-merge, size distribution, reviewer breakdown
+- JIRA ticket stats: issue types, priorities, story points, cycle time, epics
+- Sprint contribution — your story points vs team total, per sprint
+- Confluence pages created and edited, by space, content type, and activity timeline
+- A single `data/<login>_review.md` export covering all three sections
 
 ---
 
@@ -13,7 +21,7 @@ Covers GitHub PR activity, JIRA ticket work, and Confluence contributions.
 | **GitHub CLI (`gh`)** | `brew install gh` | Fetching PR data |
 | **Miller (`mlr`)** | `brew install miller` | Stripping JIRA CSV columns |
 
-Verify everything is available:
+Verify:
 ```bash
 python3 --version   # 3.10+
 gh --version
@@ -24,7 +32,7 @@ mlr --version
 
 ## Setup
 
-### 1. Authenticate GitHub CLI
+### 1. Authenticate the GitHub CLI
 
 ```bash
 gh auth login
@@ -36,12 +44,13 @@ Select **GitHub.com** → **SSH** → follow prompts. Verify with:
 gh auth status
 ```
 
-The scripts use your authenticated identity automatically. To run analysis for a different
-person, pass `--author <github-login>` — they need to be a member of the org.
+The scripts use your authenticated identity automatically. To run for a different
+person, pass `--author <github-login>` — they must be a member of the org.
 
-### 2. Configure JIRA credentials (optional — for sprint contribution %)
+### 2. Configure JIRA / Confluence credentials (optional)
 
-Copy the example env file and fill in your values:
+Required for sprint contribution %, team story points, and Confluence analysis.
+All three sections use the same Atlassian API token.
 
 ```bash
 cp .env.example .env
@@ -54,40 +63,43 @@ JIRA_EMAIL=you@your-org.com
 JIRA_TOKEN=your-api-token-here
 ```
 
-Get a JIRA API token at: **Atlassian account settings → Security → API tokens**
+Get an API token at: **Atlassian account settings → Security → API tokens**
 
 `.env` is gitignored — never commit it.
 
 ---
 
-## Quick Start (everything in one command)
+## Quick Start
 
 ```bash
 # GitHub PRs only
-./scripts/collect_author.sh <github-login>
-
-# GitHub PRs + JIRA analysis (requires JIRA.csv in repo root — see below)
-./scripts/collect_author.sh <github-login> --jira
-
-# Limit to a date range
 ./scripts/collect_author.sh <github-login> --since 2025-01-01
 
-# Re-fetch everything (ignore cache)
-./scripts/collect_author.sh <github-login> --jira --force
+# GitHub PRs + JIRA + Confluence + Markdown export
+./scripts/collect_author.sh <github-login> --since 2025-01-01 --jira --confluence --export-md
+
+# Re-fetch everything from scratch (ignore cache)
+./scripts/collect_author.sh <github-login> --since 2025-01-01 --jira --confluence --export-md --force
 ```
 
-Output files are written to `data/`:
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--since YYYY-MM-DD` | Only include activity from this date onwards |
+| `--jira` | Strip `JIRA.csv` and run JIRA analysis (requires `JIRA.csv` in repo root — see below) |
+| `--confluence` | Fetch and analyse Confluence contributions (requires `.env` credentials) |
+| `--export-md` | Generate `data/<login>_review.md` after all steps complete |
+| `--force` | Re-fetch all data even if cached output files already exist |
+
+Output files are written to `data/` (gitignored):
 ```
 data/<login>_prs.json
 data/<login>_reviewed_prs.json
-data/<login>_jira.csv               (if --jira)
-data/<login>_sprint_totals.json     (if JIRA credentials set)
-```
-
-Then generate the Markdown export:
-```bash
-python3 scripts/export_markdown.py --author <github-login> --since 2025-05-28
-# → data/<login>_review.md
+data/<login>_jira.csv               (--jira)
+data/<login>_sprint_totals.json     (--jira, with .env credentials)
+data/<login>_confluence.json        (--confluence)
+data/<login>_review.md              (--export-md)
 ```
 
 ---
@@ -96,27 +108,19 @@ python3 scripts/export_markdown.py --author <github-login> --since 2025-05-28
 
 ### What it measures
 
-- PRs authored: count, merge rate, code churn (additions/deletions), files changed
-- PRs reviewed: volume, repos covered, turnaround
-- Repo breakdown and time-to-merge distribution
+- **Authored PRs** — count, merge rate, code churn, time-to-merge, size distribution, reviewers
+- **Reviewed PRs** — volume, verdicts given, authors reviewed
 
-### Fetching and analysing
+### Running manually
 
 ```bash
-# Fetch authored PRs
-python3 scripts/fetch_prs.py --author <login> --since 2025-05-28
-
-# Fetch PRs reviewed by this person
-python3 scripts/fetch_reviewed_prs.py --author <login> --since 2025-05-28
-
-# Analyse (reads from data/ automatically)
+python3 scripts/fetch_prs.py --author <login> --since 2025-01-01
+python3 scripts/fetch_reviewed_prs.py --author <login> --since 2025-01-01
 python3 scripts/analyse_prs.py --author <login>
 ```
 
-`--since` defaults to `2025-05-28` (set in `scripts/pr_utils.py` — update for your start date).
-
-Fetched data is cached in `data/`. Re-running analysis is instant. Pass `--force` to re-fetch
-from the API.
+The default `--since` date is set in `scripts/pr_utils.py` — update `START_DATE` for your
+review period. Fetched data is cached in `data/`; re-running analysis is instant.
 
 ---
 
@@ -124,120 +128,109 @@ from the API.
 
 ### Step 1 — Export your tickets from the JIRA UI
 
-1. Open JIRA and go to **Issues → Advanced issue search**
+1. Open JIRA → **Issues → Advanced issue search**
 2. Switch to **JQL mode** (top-right of the search bar)
-3. Paste the query from `queries/completed-tickets.jql`:
+3. Paste this [query file](queries/completed-tickets.jql) (adjust the date to your review start):
    ```jql
    (assignee = currentUser() OR reporter = currentUser())
      AND status = Done
-     AND resolutiondate >= "2025-05-28"
+     AND resolutiondate >= "2025-01-01"
      AND issuetype NOT IN ("Admin Access", "Access Request")
    ORDER BY resolutiondate ASC
    ```
-   Adjust the date to your review start date.
 4. Click **Export** (top-right) → **Export CSV (all fields)**
-5. Save the file as **`JIRA.csv`** in the repo root
+5. Save as **`JIRA.csv`** in the repo root
 
-> **Tip:** "All fields" is important — the strip script selects the relevant columns
-> from the full export. A partial export may be missing Sprint or Story Points.
+> **Important:** choose "all fields" — the strip script selects the relevant columns.
+> A partial export may be missing Sprint or Story Points.
 
+The JQL query is also saved in `queries/completed-tickets.jql`.
 
-![Instruction image](assets/jira_help.png)
+![Export instructions](assets/jira_help.png)
 
 ### Step 2 — Strip and analyse
 
 ```bash
-# Strip irrelevant columns (requires mlr)
 bash scripts/strip_jira.sh --author <login>
-
-# Analyse ticket stats
 python3 scripts/analyse_jira.py --author <login>
 ```
 
-### Step 3 — Sprint contribution % (optional, requires JIRA credentials in .env)
+### Step 3 — Sprint contribution (optional, requires `.env`)
 
-Fetches the total team ticket count per sprint from the JIRA API so you can see
-your share of each sprint's completed work.
+Fetches team ticket and story point totals per sprint from the JIRA API, so you
+can see your share of each sprint's completed work. The story points field is
+auto-discovered from your JIRA instance — no configuration needed.
 
 ```bash
 python3 scripts/fetch_sprint_totals.py --author <login>
 python3 scripts/analyse_jira.py --author <login>   # re-run to pick up totals
 ```
 
-Sprint totals are cached in `data/<login>_sprint_totals.json`. Pass `--force` to re-fetch.
+Sprint totals are cached in `data/<login>_sprint_totals.json`.
 
 ---
 
-## Confluence Analysis (optional)
+## Confluence Analysis
 
-Fetches pages you created and pages you edited (others' pages), with breakdown by space,
-content type, activity timeline, and version history.
+Fetches pages you created and pages you edited (others' pages). Produces a
+breakdown by space, content type, and activity timeline, plus a version history
+for pages you own.
 
-Requires JIRA credentials in `.env` (same token works for Confluence).
+Requires the same `.env` credentials used for JIRA.
 
 ```bash
-python3 scripts/fetch_confluence.py --author <login>
+python3 scripts/fetch_confluence.py --author <login> --since 2025-01-01
 python3 scripts/analyse_confluence.py --author <login>
 ```
 
-Adjust `--since` to control the date window (default: `2025-05-28`).
+Data is cached in `data/<login>_confluence.json`. Pass `--force` to re-fetch.
 
 ---
 
 ## Exporting to Markdown
 
-Once data has been collected, generate a single Markdown document covering all three
-sections (PRs, JIRA, Confluence) suitable for pasting into Confluence, Notion, or GitHub:
+Generates a single Markdown file covering all three sections. Sections whose
+data files are absent are skipped automatically.
 
 ```bash
-python3 scripts/export_markdown.py --author <login> --since 2025-05-28
+python3 scripts/export_markdown.py --author <login> --since 2025-01-01
 # → data/<login>_review.md
 ```
 
-The exporter reads whatever cached data files are present in `data/` and skips any section
-whose data is missing. Bar charts from the terminal output are replaced with `%` columns in
-tables, which render cleanly in any Markdown viewer.
+Bar charts from the terminal output are replaced with `%` columns in tables,
+which render cleanly in any Markdown viewer.
 
-To paste into Confluence: open the target page, switch to the Markdown editor
-(**`...` menu → Edit → Markdown**), and paste the file contents. All tables, headings,
+**To paste into Confluence:** open the target page → `...` menu → **Edit** →
+switch to **Markdown** editor → paste the file contents. All tables, headings,
 and emphasis render natively.
 
 ---
 
 ## Running for a Colleague
 
-All fetch scripts accept `--author <github-login>`. The GitHub CLI must be authenticated
-with an account that has org read access. JIRA/Confluence fetches use `currentUser()` and
-therefore always reflect the credentials in `.env` — to analyse a colleague's JIRA data
-you would need them to export their own `JIRA.csv` and run the fetch scripts themselves.
+You can use **your own API token** — no need to share credentials. GitHub PRs
+are fetched by `--author` login. For Confluence, pass `--confluence-email` so
+the scripts query the colleague's pages rather than yours. `.env` stays
+unchanged.
+
+To export your colleague's data, change the JQL `currentUser()` to their actual `Username` to export their own `JIRA.csv` (see
+[JIRA Analysis → Step 1](#step-1--export-your-tickets-from-the-jira-ui)) and
+place it in the repo root, then run:
 
 ```bash
-./scripts/collect_author.sh their-github-login --since 2025-01-01
+./scripts/collect_author.sh their-github-login \
+  --since 2025-01-01 \
+  --jira \
+  --confluence --confluence-email their-atlassian@your-org.com \
+  --export-md
 ```
 
----
-
-## Script Reference
-
-| Script | Description |
-|---|---|
-| `collect_author.sh` | One-shot orchestrator — runs all steps in order |
-| `fetch_prs.py` | Fetch authored PRs via GitHub CLI |
-| `fetch_reviewed_prs.py` | Fetch reviewed PRs via GitHub CLI |
-| `analyse_prs.py` | Analyse PR JSON → print summary |
-| `strip_jira.sh` | Strip JIRA CSV to relevant columns (requires `mlr`) |
-| `fetch_sprint_totals.py` | Fetch team sprint totals from JIRA API |
-| `analyse_jira.py` | Analyse stripped JIRA CSV → print summary |
-| `fetch_confluence.py` | Fetch Confluence page contributions via API |
-| `analyse_confluence.py` | Analyse Confluence JSON → print summary |
-| `export_markdown.py` | Export all sections as a single Markdown document |
-| `utils.py` | Shared formatting helpers (`fmt_duration`, `fmt_int`, `pct`, `bar`) |
-
----
+Output is written to `data/their-github-login_review.md`; all intermediate
+files are scoped to their login so your own cached data is unaffected.
 
 ## Caching
 
-All fetch scripts cache their output in `data/` and skip the network on subsequent runs.
-Pass `--force` to any fetch script to re-fetch from the API.
+All fetch scripts write their output to `data/` and skip the network on
+subsequent runs. Pass `--force` to any fetch script to re-fetch from the API.
 
-`data/` is gitignored — outputs are local only.
+`data/` is gitignored — all outputs are local only.
