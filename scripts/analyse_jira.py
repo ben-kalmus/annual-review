@@ -240,6 +240,20 @@ def display(
     print(f"\n── Sprints ({section}) {'─' * (34 - len(section))}  {len(sprints)} total")
 
     if has_totals:
+        # Compute pts % per sprint for stats (only sprints with team pts data)
+        pts_ratios = [
+            (sprint, s["story_points"] or 0, sprint_totals[sprint]["total_story_points"])
+            for sprint, s in sprints.items()
+            if sprint in sprint_totals and sprint_totals[sprint]["total_story_points"]
+        ]
+        if pts_ratios:
+            ratios = [my / team for _, my, team in pts_ratios]
+            mean_pct = sum(ratios) / len(ratios)
+            top_sprint, top_my, top_team = max(pts_ratios, key=lambda x: x[1] / x[2])
+            print(f"  Mean contribution   {mean_pct * 100:.0f}%  (pts)")
+            print(f"  Top sprint          {top_sprint}  —  {top_my} / {top_team:.0f} pts  ({top_my / top_team * 100:.0f}%)")
+            print()
+
         print(
             f"  {'sprint':<35} {'my tkts':>7}  {'team tkts':>9}  {'my pts':>6}  {'team pts':>8}  {'pts %':>5}"
         )

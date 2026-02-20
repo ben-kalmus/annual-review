@@ -238,6 +238,20 @@ def section_jira(jira_path: Path, sprint_totals_path: Path, author: str) -> str:
     out.append(h(3, "Sprint Contribution"))
     sprints = stats["sprints"]
     if sprint_totals:
+        pts_ratios = [
+            (sprint, s["story_points"] or 0, sprint_totals[sprint]["total_story_points"])
+            for sprint, s in sprints.items()
+            if sprint in sprint_totals and sprint_totals[sprint]["total_story_points"]
+        ]
+        if pts_ratios:
+            ratios = [my / team for _, my, team in pts_ratios]
+            mean_pct = sum(ratios) / len(ratios)
+            top_sprint, top_my, top_team = max(pts_ratios, key=lambda x: x[1] / x[2])
+            out.append(kv([
+                ("Mean pts contribution", f"{mean_pct * 100:.0f}%"),
+                ("Top sprint", f"{top_sprint} — {top_my} / {top_team:.0f} pts ({top_my / top_team * 100:.0f}%)"),
+            ]))
+
         sprint_rows = []
         for sprint, s in sprints.items():
             my_pts = s["story_points"] or 0
