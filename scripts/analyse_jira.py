@@ -241,23 +241,24 @@ def display(
 
     if has_totals:
         print(
-            f"  {'sprint':<35} {'my tkts':>7}  {'team tkts':>9}  {'tkts %':>6}  {'my pts':>6}"
+            f"  {'sprint':<35} {'my tkts':>7}  {'team tkts':>9}  {'my pts':>6}  {'team pts':>8}  {'pts %':>5}"
         )
-        print(f"  {'─' * 35} {'─' * 7}  {'─' * 9}  {'─' * 6}  {'─' * 6}")
+        print(f"  {'─' * 35} {'─' * 7}  {'─' * 9}  {'─' * 6}  {'─' * 8}  {'─' * 5}")
         for sprint, s in sprints.items():
-            pts = f"{s['story_points']:>5}" if s["story_points"] else "    —"
+            my_pts = s["story_points"] or 0
             if sprint in sprint_totals:
                 tot = sprint_totals[sprint]
                 t_tkts = tot["total_tickets"]
-                ratio = s["tickets"] / t_tkts if t_tkts else 0
-                filled = round(ratio * 20)  # bar scaled to 20 chars = 100%
+                t_pts = tot["total_story_points"]
+                ratio = my_pts / t_pts if t_pts else 0
+                filled = round(ratio * 20)
                 bar = "█" * filled + "░" * (20 - filled)
                 print(
-                    f"  {sprint:<35} {s['tickets']:>7}  {t_tkts:>9}  {pct(s['tickets'], t_tkts):>6}  {pts:>6}  {bar}"
+                    f"  {sprint:<35} {s['tickets']:>7}  {t_tkts:>9}  {my_pts:>6}  {t_pts:>8.0f}  {pct(my_pts, t_pts):>5}  {bar}"
                 )
             else:
                 print(
-                    f"  {sprint:<35} {s['tickets']:>7}  {'?':>9}  {'?':>6}  {pts:>6}  (no totals)"
+                    f"  {sprint:<35} {s['tickets']:>7}  {'?':>9}  {my_pts:>6}  {'?':>8}  {'?':>5}  (no totals)"
                 )
     else:
         print(f"  {'sprint':<35} {'tickets':>7}   {'pts':>5}")

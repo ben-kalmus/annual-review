@@ -240,14 +240,14 @@ def section_jira(jira_path: Path, sprint_totals_path: Path, author: str) -> str:
     if sprint_totals:
         sprint_rows = []
         for sprint, s in sprints.items():
-            pts = s["story_points"] if s["story_points"] else "—"
+            my_pts = s["story_points"] or 0
             if sprint in sprint_totals:
                 tot = sprint_totals[sprint]
-                total_t = tot["total_tickets"]
-                sprint_rows.append([sprint, s["tickets"], total_t, pct(s["tickets"], total_t), pts])
+                t_pts = tot["total_story_points"]
+                sprint_rows.append([sprint, s["tickets"], tot["total_tickets"], my_pts, int(t_pts), pct(my_pts, t_pts)])
             else:
-                sprint_rows.append([sprint, s["tickets"], "—", "—", pts])
-        out.append(table(["Sprint", "Your tickets", "Team total", "Tickets %", "Your pts"], sprint_rows))
+                sprint_rows.append([sprint, s["tickets"], "—", my_pts, "—", "—"])
+        out.append(table(["Sprint", "Your tickets", "Team tickets", "Your pts", "Team pts", "Pts %"], sprint_rows))
     else:
         out.append(table(
             ["Sprint", "Tickets", "Story points"],
