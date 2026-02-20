@@ -52,9 +52,6 @@ cp .env.example .env
 JIRA_URL=https://your-org.atlassian.net
 JIRA_EMAIL=you@your-org.com
 JIRA_TOKEN=your-api-token-here
-
-# Story points custom field — run fetch_sprint_totals.py once to auto-discover
-JIRA_SP_FIELD=customfield_10016
 ```
 
 Get a JIRA API token at: **Atlassian account settings → Security → API tokens**
