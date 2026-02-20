@@ -83,8 +83,14 @@ Output files are written to `data/`:
 ```
 data/<login>_prs.json
 data/<login>_reviewed_prs.json
-data/<login>_jira.csv          (if --jira)
-data/<login>_sprint_totals.json (if JIRA credentials set)
+data/<login>_jira.csv               (if --jira)
+data/<login>_sprint_totals.json     (if JIRA credentials set)
+```
+
+Then generate the Markdown export:
+```bash
+python3 scripts/export_markdown.py --author <github-login> --since 2025-05-28
+# → data/<login>_review.md
 ```
 
 ---
@@ -181,6 +187,26 @@ Adjust `--since` to control the date window (default: `2025-05-28`).
 
 ---
 
+## Exporting to Markdown
+
+Once data has been collected, generate a single Markdown document covering all three
+sections (PRs, JIRA, Confluence) suitable for pasting into Confluence, Notion, or GitHub:
+
+```bash
+python3 scripts/export_markdown.py --author <login> --since 2025-05-28
+# → data/<login>_review.md
+```
+
+The exporter reads whatever cached data files are present in `data/` and skips any section
+whose data is missing. Bar charts from the terminal output are replaced with `%` columns in
+tables, which render cleanly in any Markdown viewer.
+
+To paste into Confluence: open the target page, switch to the Markdown editor
+(**`...` menu → Edit → Markdown**), and paste the file contents. All tables, headings,
+and emphasis render natively.
+
+---
+
 ## Running for a Colleague
 
 All fetch scripts accept `--author <github-login>`. The GitHub CLI must be authenticated
@@ -207,6 +233,8 @@ you would need them to export their own `JIRA.csv` and run the fetch scripts the
 | `analyse_jira.py` | Analyse stripped JIRA CSV → print summary |
 | `fetch_confluence.py` | Fetch Confluence page contributions via API |
 | `analyse_confluence.py` | Analyse Confluence JSON → print summary |
+| `export_markdown.py` | Export all sections as a single Markdown document |
+| `utils.py` | Shared formatting helpers (`fmt_duration`, `fmt_int`, `pct`, `bar`) |
 
 ---
 
