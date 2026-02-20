@@ -122,6 +122,26 @@ def _extract_date(page: dict) -> str:
     return raw[:10] if raw else ""
 
 
+def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool = False) -> str | None:
+    """Look up an Atlassian account ID by email. Returns None if not found."""
+    try:
+        results = confluence_get(
+            f"{base_url}/rest/api/3/user/search",
+            auth_header,
+            {"query": email},
+            debug=debug,
+        )
+        if isinstance(results, list):
+            for user in results:
+                if user.get("emailAddress", "").lower() == email.lower():
+                    return user.get("accountId")
+            if results:
+                return results[0].get("accountId")
+    except Exception:
+        pass
+    return None
+
+
 def fetch_pages(base_url: str, auth_header: str, cql: str, debug: bool = False) -> list[dict]:
     url = f"{base_url}/wiki/rest/api/content/search"
     pages: list[dict] = []
@@ -202,8 +222,22 @@ def main():
     auth_header = build_auth_header(email, token)
     since = args.since
 
-    target_email = args.confluence_email or email
-    user_cql = f'"{target_email}"'
+    colleague_email = args.confluence_email
+    if colleague_email and colleague_email != email:
+        # Querying for a colleague — resolve their account ID for CQL
+        print(f"Looking up account ID for: {colleague_email}...", end=" ", flush=True)
+        account_id = lookup_account_id(base_url, auth_header, colleague_email, debug=args.debug)
+        if account_id:
+            user_cql = f'"{account_id}"'
+            print(f"found ({account_id})")
+        else:
+            user_cql = f'"{colleague_email}"'
+            print("not found — falling back to email in CQL")
+        target_email = colleague_email
+    else:
+        # Querying for yourself — currentUser() is reliable and avoids account ID lookup
+        user_cql = "currentUser()"
+        target_email = email
 
     print(f"Fetching Confluence pages for: {target_email}  (since {since})")
 
