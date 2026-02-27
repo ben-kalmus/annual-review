@@ -56,14 +56,15 @@ def load_dotenv(dotenv_path: Path) -> None:
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
-_MAX_RETRIES        = 5
-_RATE_LIMIT_WAIT    = 60   # seconds — fallback when Retry-After header absent
-_BACKOFF_BASE       = 5    # seconds — base for exponential back-off on 5xx
-_DEFAULT_SP_FIELD   = "customfield_10016"
-_SP_FIELD_NAMES     = {"story points", "story point estimate", "story points estimate"}
+_MAX_RETRIES = 5
+_RATE_LIMIT_WAIT = 60  # seconds — fallback when Retry-After header absent
+_BACKOFF_BASE = 5  # seconds — base for exponential back-off on 5xx
+_DEFAULT_SP_FIELD = "customfield_10016"
+_SP_FIELD_NAMES = {"story points", "story point estimate", "story points estimate"}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def build_auth_header(email: str, token: str) -> str:
     raw = f"{email}:{token}".encode("utf-8")
@@ -78,7 +79,9 @@ def _read_error_body(exc: urllib.error.HTTPError) -> str:
         return "(could not read response body)"
 
 
-def jira_get(url: str, auth_header: str, params: dict, debug: bool = False) -> dict | list:
+def jira_get(
+    url: str, auth_header: str, params: dict, debug: bool = False
+) -> dict | list:
     """
     GET a JIRA REST endpoint and return parsed JSON.
     Retries on HTTP 429 (rate limit) and 5xx errors with back-off.
@@ -121,7 +124,7 @@ def jira_get(url: str, auth_header: str, params: dict, debug: bool = False) -> d
                 print(f"  Rate limit hit — waiting {wait}s...", file=sys.stderr)
                 time.sleep(wait)
             else:
-                wait = _BACKOFF_BASE * (2 ** attempt)
+                wait = _BACKOFF_BASE * (2**attempt)
                 print(
                     f"  Retrying in {wait}s (attempt {attempt}/{_MAX_RETRIES})...",
                     file=sys.stderr,
@@ -135,16 +138,21 @@ def jira_get(url: str, auth_header: str, params: dict, debug: bool = False) -> d
                 time.sleep(wait)
 
         except urllib.error.URLError as exc:
-            wait = _BACKOFF_BASE * (2 ** attempt)
-            print(f"\n  Network error ({exc.reason}) — retrying in {wait}s...", file=sys.stderr)
+            wait = _BACKOFF_BASE * (2**attempt)
+            print(
+                f"\n  Network error ({exc.reason}) — retrying in {wait}s...",
+                file=sys.stderr,
+            )
             if attempt == _MAX_RETRIES:
-                raise RuntimeError(f"Network error after {_MAX_RETRIES} retries: {exc.reason}") from exc
+                raise RuntimeError(
+                    f"Network error after {_MAX_RETRIES} retries: {exc.reason}"
+                ) from exc
             time.sleep(wait)
 
     return {}  # unreachable; satisfies type checker
 
 
-def jira_post(url: str, auth_header: str, body: dict, debug: bool = False) -> dict | list:
+def jira_post(url: str, auth_header: str, body: dict, debug: bool = False) -> dict:
     """
     POST a JIRA REST endpoint with a JSON body and return parsed JSON.
     Same retry/error-handling behaviour as jira_get.
@@ -173,9 +181,13 @@ def jira_post(url: str, auth_header: str, body: dict, debug: bool = False) -> di
             print(f"  Response: {body_str[:500]}", file=sys.stderr)
 
             if exc.code == 401:
-                raise RuntimeError("Authentication failed — check JIRA_EMAIL and JIRA_TOKEN") from exc
+                raise RuntimeError(
+                    "Authentication failed — check JIRA_EMAIL and JIRA_TOKEN"
+                ) from exc
             if exc.code == 403:
-                raise RuntimeError("Forbidden — token may lack read permissions on this project") from exc
+                raise RuntimeError(
+                    "Forbidden — token may lack read permissions on this project"
+                ) from exc
             if exc.code == 410:
                 raise RuntimeError(
                     f"HTTP 410 Gone — endpoint or resource no longer exists.\n"
@@ -187,8 +199,11 @@ def jira_post(url: str, auth_header: str, body: dict, debug: bool = False) -> di
                 print(f"  Rate limit hit — waiting {wait}s...", file=sys.stderr)
                 time.sleep(wait)
             else:
-                wait = _BACKOFF_BASE * (2 ** attempt)
-                print(f"  Retrying in {wait}s (attempt {attempt}/{_MAX_RETRIES})...", file=sys.stderr)
+                wait = _BACKOFF_BASE * (2**attempt)
+                print(
+                    f"  Retrying in {wait}s (attempt {attempt}/{_MAX_RETRIES})...",
+                    file=sys.stderr,
+                )
                 if attempt == _MAX_RETRIES:
                     raise RuntimeError(
                         f"JIRA API error after {_MAX_RETRIES} retries: HTTP {exc.code}\n"
@@ -198,10 +213,15 @@ def jira_post(url: str, auth_header: str, body: dict, debug: bool = False) -> di
                 time.sleep(wait)
 
         except urllib.error.URLError as exc:
-            wait = _BACKOFF_BASE * (2 ** attempt)
-            print(f"\n  Network error ({exc.reason}) — retrying in {wait}s...", file=sys.stderr)
+            wait = _BACKOFF_BASE * (2**attempt)
+            print(
+                f"\n  Network error ({exc.reason}) — retrying in {wait}s...",
+                file=sys.stderr,
+            )
             if attempt == _MAX_RETRIES:
-                raise RuntimeError(f"Network error after {_MAX_RETRIES} retries: {exc.reason}") from exc
+                raise RuntimeError(
+                    f"Network error after {_MAX_RETRIES} retries: {exc.reason}"
+                ) from exc
             time.sleep(wait)
 
     return {}
@@ -209,11 +229,16 @@ def jira_post(url: str, auth_header: str, body: dict, debug: bool = False) -> di
 
 # ── CSV helpers ───────────────────────────────────────────────────────────────
 
+
 def infer_project(csv_path: Path) -> str:
     """Return the most common Project key in the CSV."""
     with csv_path.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
-    counts = Counter(r.get("Project key", "").strip() for r in rows if r.get("Project key", "").strip())
+    counts = Counter(
+        r.get("Project key", "").strip()
+        for r in rows
+        if r.get("Project key", "").strip()
+    )
     if not counts:
         print(f"Error: no 'Project key' values found in {csv_path}", file=sys.stderr)
         sys.exit(1)
@@ -236,6 +261,7 @@ def sprints_from_csv(csv_path: Path, project: str) -> list[str]:
 
 
 # ── story-point field discovery ───────────────────────────────────────────────
+
 
 def resolve_sp_fields(
     base_url: str,
@@ -263,7 +289,9 @@ def resolve_sp_fields(
 
     # Name-matched candidates from the field registry
     try:
-        all_fields = jira_get(f"{base_url}/rest/api/3/field", auth_header, {}, debug=debug)
+        all_fields = jira_get(
+            f"{base_url}/rest/api/3/field", auth_header, {}, debug=debug
+        )
         if isinstance(all_fields, list):
             for field in all_fields:
                 if field.get("name", "").lower() in _SP_FIELD_NAMES:
@@ -276,12 +304,20 @@ def resolve_sp_fields(
         data = jira_post(
             f"{base_url}/rest/api/3/search/jql",
             auth_header,
-            {"jql": f'project="{project}" AND sprint="{sprint}" AND status=Done', "fields": ["*all"], "maxResults": 5},
+            {
+                "jql": f'project="{project}" AND sprint="{sprint}" AND status=Done',
+                "fields": ["*all"],
+                "maxResults": 5,
+            },
             debug=debug,
         )
         for issue in data.get("issues", []):
             for k, v in issue.get("fields", {}).items():
-                if k.startswith("customfield_") and isinstance(v, (int, float)) and v > 0:
+                if (
+                    k.startswith("customfield_")
+                    and isinstance(v, (int, float))
+                    and v > 0
+                ):
                     add(k)
     except Exception:
         pass
@@ -290,6 +326,7 @@ def resolve_sp_fields(
 
 
 # ── sprint fetch ──────────────────────────────────────────────────────────────
+
 
 def fetch_sprint_total(
     base_url: str,
@@ -346,11 +383,15 @@ def fetch_sprint_total(
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+
 def resolve(flag_val: str | None, env_key: str, label: str) -> str:
     """Return flag value if set, else env var, else exit with a clear message."""
     value = flag_val or __import__("os").environ.get(env_key)
     if not value:
-        print(f"Error: --{label.lower().replace(' ', '-')} / {env_key} is required", file=sys.stderr)
+        print(
+            f"Error: --{label.lower().replace(' ', '-')} / {env_key} is required",
+            file=sys.stderr,
+        )
         sys.exit(1)
     return value
 
@@ -361,20 +402,48 @@ def main():
     load_dotenv(_repo_root / ".env")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--author",   required=True, help="GitHub login; drives default file paths")
-    parser.add_argument("--jira-url", default=None,  help="JIRA base URL (env: JIRA_URL)")
-    parser.add_argument("--email",    default=None,  help="Atlassian account email (env: JIRA_EMAIL)")
-    parser.add_argument("--token",    default=None,  help="JIRA API token (env: JIRA_TOKEN)")
-    parser.add_argument("--project",  default=None,  help="Project key (default: inferred from CSV)")
-    parser.add_argument("--sp-field", default=_DEFAULT_SP_FIELD, help=f"Story points custom field ID to try first (default: {_DEFAULT_SP_FIELD}); additional fields are auto-discovered")
-    parser.add_argument("--input",    default=None,  help="Stripped JIRA CSV (default: data/{author}_jira.csv)")
-    parser.add_argument("--output",   default=None,  help="Output JSON (default: data/{author}_sprint_totals.json)")
-    parser.add_argument("--force",    action="store_true", help="Re-fetch even if output already exists")
-    parser.add_argument("--debug",    action="store_true", help="Print each request URL and response body on errors")
+    parser.add_argument(
+        "--author", required=True, help="GitHub login; drives default file paths"
+    )
+    parser.add_argument(
+        "--jira-url", default=None, help="JIRA base URL (env: JIRA_URL)"
+    )
+    parser.add_argument(
+        "--email", default=None, help="Atlassian account email (env: JIRA_EMAIL)"
+    )
+    parser.add_argument(
+        "--token", default=None, help="JIRA API token (env: JIRA_TOKEN)"
+    )
+    parser.add_argument(
+        "--project", default=None, help="Project key (default: inferred from CSV)"
+    )
+    parser.add_argument(
+        "--sp-field",
+        default=_DEFAULT_SP_FIELD,
+        help=f"Story points custom field ID to try first (default: {_DEFAULT_SP_FIELD}); additional fields are auto-discovered",
+    )
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="Stripped JIRA CSV (default: data/{author}_jira_stripped.csv)",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Output JSON (default: data/{author}_sprint_totals.json)",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Re-fetch even if output already exists"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print each request URL and response body on errors",
+    )
     args = parser.parse_args()
 
     author = args.author
-    input_path  = Path(args.input  or f"data/{author}_jira.csv")
+    input_path = Path(args.input or f"data/{author}_jira_stripped.csv")
     output_path = Path(args.output or f"data/{author}_sprint_totals.json")
 
     if not input_path.exists():
@@ -387,9 +456,9 @@ def main():
         sys.exit(0)
 
     # Credential resolution
-    base_url = resolve(args.jira_url, "JIRA_URL",   "jira-url").rstrip("/")
-    email    = resolve(args.email,    "JIRA_EMAIL",  "email")
-    token    = resolve(args.token,    "JIRA_TOKEN",  "token")
+    base_url = resolve(args.jira_url, "JIRA_URL", "jira-url").rstrip("/")
+    email = resolve(args.email, "JIRA_EMAIL", "email")
+    token = resolve(args.token, "JIRA_TOKEN", "token")
     auth_header = build_auth_header(email, token)
 
     # Project and sprints
@@ -397,13 +466,17 @@ def main():
     sprints = sprints_from_csv(input_path, project)
 
     if not sprints:
-        print(f"No sprints found for project '{project}' in {input_path}. Nothing to fetch.")
+        print(
+            f"No sprints found for project '{project}' in {input_path}. Nothing to fetch."
+        )
         sys.exit(0)
 
     print(f"Project: {project}  |  {len(sprints)} sprints to fetch")
 
     # Resolve SP fields once upfront — tries primary field first, then any others with data
-    sp_fields = resolve_sp_fields(base_url, auth_header, project, sprints[0], args.sp_field, debug=args.debug)
+    sp_fields = resolve_sp_fields(
+        base_url, auth_header, project, sprints[0], args.sp_field, debug=args.debug
+    )
     print(f"SP fields: {', '.join(sp_fields)}")
 
     results: dict[str, dict] = {}
@@ -411,7 +484,9 @@ def main():
 
     for i, sprint in enumerate(sprints, 1):
         print(f"\r  [{i}/{len(sprints)}] {sprint:<40}", end="", flush=True)
-        result = fetch_sprint_total(base_url, auth_header, project, sprint, sp_fields, debug=args.debug)
+        result = fetch_sprint_total(
+            base_url, auth_header, project, sprint, sp_fields, debug=args.debug
+        )
         total_null_sp += result.pop("_null_sp_count")
         results[sprint] = result
 

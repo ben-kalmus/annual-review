@@ -433,7 +433,7 @@ def main():
 
     # JIRA
     jira_section = section_jira(
-        jira_path          = data_dir / f"{author}_jira.csv",
+        jira_path          = data_dir / f"{author}_jira_stripped.csv",
         sprint_totals_path = data_dir / f"{author}_sprint_totals.json",
         author             = author,
     )
@@ -441,7 +441,7 @@ def main():
         sections.append(hr())
         sections.append(jira_section)
     else:
-        print(f"Note: {data_dir}/{author}_jira.csv not found — skipping JIRA section.")
+        print(f"Note: {data_dir}/{author}_jira_stripped.csv not found — skipping JIRA section.")
 
     # Confluence
     conf_section = section_confluence(

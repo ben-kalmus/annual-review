@@ -1,4 +1,4 @@
 data
-JIRA.csv
+*.csv
 scripts/__pycache__
 .env

@@ -7,9 +7,9 @@
 #
 # Usage:
 #   ./scripts/strip_jira.sh --author <login>
-#       Input:  JIRA.csv  (repo root, by convention)
-#       Output: data/<login>_jira.csv
-#   ./scripts/strip_jira.sh --input path/to/JIRA.csv --output data/out.csv  # fully custom
+#       Input:  <login>.csv  (repo root, by convention)
+#       Output: data/<login>_jira_stripped.csv
+#   ./scripts/strip_jira.sh --input path/to/custom.csv --output data/out.csv  # fully custom
 #
 # Requires: mlr (miller), python3
 
@@ -18,7 +18,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 AUTHOR=""
-INPUT="$REPO_ROOT/JIRA.csv"
+INPUT=""
 OUTPUT=""
 
 while [[ $# -gt 0 ]]; do
@@ -30,13 +30,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$OUTPUT" ]]; then
-    if [[ -z "$AUTHOR" ]]; then
-        echo "Error: --author <login> is required (or pass --output to set a custom path)"
-        exit 1
-    fi
-    OUTPUT="$REPO_ROOT/data/${AUTHOR}_jira.csv"
+if [[ -z "$AUTHOR" && -z "$INPUT" ]]; then
+    echo "Error: --author <login> is required (or pass --input to set a custom path)"
+    exit 1
 fi
+
+[[ -z "$INPUT"  ]] && INPUT="$REPO_ROOT/${AUTHOR}.csv"
+[[ -z "$OUTPUT" ]] && OUTPUT="$REPO_ROOT/data/${AUTHOR}_jira_stripped.csv"
 
 if [[ ! -f "$INPUT" ]]; then
     echo "Error: input file not found: $INPUT"

@@ -332,7 +332,7 @@ def main():
     # Load reviewed PRs if the file exists
     reviewed_stats = None
     reviewed_path = reviewed_input_path
-    if reviewed_path.exists():
+    if reviewed_path is not None and reviewed_path.exists():
         reviewed_prs = json.loads(reviewed_path.read_text())
 
         # Verify the reviewed file actually contains reviews by the expected author

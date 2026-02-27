@@ -98,7 +98,7 @@ Output files are written to `data/` (gitignored):
 ```
 data/<login>_prs.json
 data/<login>_reviewed_prs.json
-data/<login>_jira.csv               (--jira)
+data/<login>_jira_stripped.csv      (--jira)
 data/<login>_sprint_totals.json     (--jira, with .env credentials)
 data/<login>_confluence.json        (--confluence)
 data/<login>_review.md              (--export-md)
@@ -118,7 +118,7 @@ data/<login>_review.md              (--export-md)
 ```bash
 python3 scripts/fetch_prs.py --author <login> --org my-company --since 2025-01-01
 python3 scripts/fetch_reviewed_prs.py --author <login> --org my-company --since 2025-01-01
-python3 scripts/analyse_prs.py --author <login> --org my-company
+python3 scripts/analyse_prs.py --author <login>
 ```
 
 The default `--since` date is set in `scripts/pr_utils.py` — update `START_DATE` for your
@@ -141,7 +141,7 @@ review period. Fetched data is cached in `data/`; re-running analysis is instant
    ORDER BY resolutiondate ASC
    ```
 4. Click **Export** (top-right) → **Export CSV (all fields)**
-5. Save as **`JIRA.csv`** in the repo root
+5. Save as **`<github-login>.csv`** in the repo root (e.g. `john-doe.csv`)
 
 > **Important:** choose "all fields" — the strip script selects the relevant columns.
 > A partial export may be missing Sprint or Story Points.
@@ -151,6 +151,9 @@ The JQL query is also saved in `queries/completed-tickets.jql`.
 ![Export instructions](assets/jira_help.png)
 
 ### Step 2 — Strip and analyse
+
+Strips the raw export down to the relevant columns and writes
+`data/<login>_jira_stripped.csv`:
 
 ```bash
 bash scripts/strip_jira.sh --author <login>
@@ -210,14 +213,11 @@ and emphasis render natively.
 
 ## Running for a Colleague
 
-You can use **your own API token** — no need to share credentials. GitHub PRs
-are fetched by `--author` login. For Confluence, pass `--confluence-email` so
-the scripts query the colleague's pages rather than yours. `.env` stays
-unchanged.
+You can use **your own API token** — no need to share credentials.
 
-To export your colleague's data, change the JQL `currentUser()` to their actual `Username` to export their own `JIRA.csv` (see
-[JIRA Analysis → Step 1](#step-1--export-your-tickets-from-the-jira-ui)) and
-place it in the repo root, then run:
+- **GitHub PRs** are scoped by `--author <github-login>`
+- **Confluence** pages are fetched for whoever's email is passed via `--confluence-email`; your `.env` token is used for auth
+- **JIRA** analysis reads from a `JIRA.csv` export — ask your colleague to export their own (see [Step 1](#step-1--export-your-tickets-from-the-jira-ui)) and place it in the repo root before running
 
 ```bash
 ./scripts/collect_author.sh their-github-login \
@@ -229,6 +229,8 @@ place it in the repo root, then run:
 
 Output is written to `data/their-github-login_review.md`; all intermediate
 files are scoped to their login so your own cached data is unaffected.
+
+---
 
 ## Caching
 

@@ -16,7 +16,7 @@
 #                         Omit to include all orgs the user has activity in.
 # --jira                  Strip JIRA.csv (from repo root) and analyse it.
 #                         Input:  JIRA.csv  (must exist in repo root)
-#                         Output: data/<author>_jira.csv
+#                         Output: data/<author>_jira_stripped.csv
 # --confluence            Fetch and analyse Confluence contributions (requires .env creds).
 #                         Output: data/<author>_confluence.json
 # --confluence-email      Atlassian email of the person to fetch Confluence pages for.
@@ -149,7 +149,7 @@ echo "  Done. Files written to $REPO_ROOT/data/"
 echo "    ${AUTHOR}_prs.json"
 echo "    ${AUTHOR}_reviewed_prs.json"
 if [[ "$RUN_JIRA" == true ]]; then
-    echo "    ${AUTHOR}_jira.csv"
+    echo "    ${AUTHOR}_jira_stripped.csv"
     [[ -f "data/${AUTHOR}_sprint_totals.json" ]] && echo "    ${AUTHOR}_sprint_totals.json"
 fi
 [[ -f "data/${AUTHOR}_confluence.json" ]] && echo "    ${AUTHOR}_confluence.json"

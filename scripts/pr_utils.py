@@ -10,7 +10,6 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 
 START_DATE = "2025-05-28"
 BATCH_SIZE = 50  # safe page size that avoids GraphQL 502s on large repos
@@ -55,7 +54,7 @@ def _wait_for_rate_limit_reset() -> None:
         time.sleep(_SECONDARY_RATE_WAIT)
 
 
-def gh(*args: str) -> list | dict:
+def gh(*args: str) -> dict:
     """
     Run a gh CLI command and return parsed JSON.
     Retries automatically on rate limit errors with appropriate back-off.
@@ -76,9 +75,9 @@ def gh(*args: str) -> list | dict:
         else:
             # Non-rate-limit error — warn and return empty (existing behaviour)
             print(f"  Warning: {stderr}", file=sys.stderr)
-            return []
+            return dict()
 
-    return []  # unreachable, satisfies type checker
+    return dict()  # unreachable, satisfies type checker
 
 
 def current_user() -> str:

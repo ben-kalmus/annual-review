@@ -8,8 +8,8 @@ and sprint breakdown — all detail sections scoped to tickets assigned to you.
 
 Usage:
     python3 scripts/analyse_jira.py --author user-name
-    python3 scripts/analyse_jira.py --input data/<your-login>_jira.csv
-    python3 scripts/analyse_jira.py --input data/<your-login>_jira.csv --output data/jira_stats.json
+    python3 scripts/analyse_jira.py --input data/<your-login>_jira_stripped.csv
+    python3 scripts/analyse_jira.py --input data/<your-login>_jira_stripped.csv --output data/jira_stats.json
 """
 
 import argparse
@@ -239,7 +239,7 @@ def display(
     section = "your contribution" if has_totals else "your tickets"
     print(f"\n── Sprints ({section}) {'─' * (34 - len(section))}  {len(sprints)} total")
 
-    if has_totals:
+    if sprint_totals is not None:
         # Compute pts % per sprint for stats (only sprints with team pts data)
         pts_ratios = [
             (sprint, s["story_points"] or 0, sprint_totals[sprint]["total_story_points"])
@@ -294,7 +294,7 @@ def main():
     parser.add_argument(
         "--input",
         default=None,
-        help="Stripped JIRA CSV (default: data/{author}_jira.csv)",
+        help="Stripped JIRA CSV (default: data/{author}_jira_stripped.csv)",
     )
     parser.add_argument(
         "--author",
@@ -316,7 +316,7 @@ def main():
     if args.input:
         input_path = Path(args.input)
     elif author:
-        input_path = Path(f"data/{author}_jira.csv")
+        input_path = Path(f"data/{author}_jira_stripped.csv")
     else:
         parser.error(
             "Pass --author <login> or --input <path> to specify which CSV to analyse."
