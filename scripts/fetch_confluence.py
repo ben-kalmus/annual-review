@@ -142,13 +142,35 @@ def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool =
     return None
 
 
+def get_current_user_account_id(base_url: str, auth_header: str, debug: bool = False) -> str | None:
+    """Return the account ID of the authenticated user via the Confluence API."""
+    try:
+        result = confluence_get(
+            f"{base_url}/wiki/rest/api/user/current",
+            auth_header,
+            {},
+            debug=debug,
+        )
+        return result.get("accountId")
+    except Exception:
+        return None
+
+
 def fetch_pages(
     base_url: str,
     auth_header: str,
     cql: str,
+    stop_before: str | None = None,
     max_results: int | None = None,
     debug: bool = False,
 ) -> list[dict]:
+    """Fetch pages matching a CQL query.
+
+    stop_before: if set (YYYY-MM-DD), stop paginating once all results in a batch
+    are older than this date. Use with ORDER BY lastModified DESC queries to avoid
+    paginating through the full history.
+    max_results: hard cap on total pages fetched (safety net for large result sets).
+    """
     url = f"{base_url}/wiki/rest/api/content/search"
     pages: list[dict] = []
     start = 0
@@ -175,6 +197,8 @@ def fetch_pages(
                     "created": _extract_date(r),
                     "last_modified": (version.get("when") or "")[:10],
                     "version_number": version.get("number"),
+                    # internal field used for post-filtering; stripped before output
+                    "_version_author_id": version.get("by", {}).get("accountId", ""),
                 }
             )
 
@@ -183,10 +207,28 @@ def fetch_pages(
 
         if fetched < _PAGE_LIMIT or not data.get("_links", {}).get("next"):
             break
+
         if max_results and len(pages) >= max_results:
             break
+        # Early exit: results are ordered DESC by lastModified, so once the oldest
+        # result in this batch predates our cutoff, all subsequent pages will too.
+        if stop_before and results:
+            oldest_in_batch = (
+                results[-1].get("version", {}).get("when") or ""
+            )[:10]
+            if oldest_in_batch and oldest_in_batch < stop_before:
+                break
 
-    return pages
+    # Deduplicate by page ID (Confluence search can return the same page
+    # multiple times across paginated results).
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for p in pages:
+        pid = p["id"]
+        if pid not in seen:
+            seen.add(pid)
+            unique.append(p)
+    return unique
 
 
 def resolve(flag_val: str | None, env_key: str, label: str) -> str:
@@ -230,6 +272,7 @@ def main():
     auth_header = build_auth_header(email, token)
     since = args.since
 
+    account_id: str | None = None
     colleague_email = args.confluence_email
     if colleague_email and colleague_email != email:
         # Querying for a colleague — resolve their account ID for CQL
@@ -246,6 +289,7 @@ def main():
         # Querying for yourself — currentUser() is reliable and avoids account ID lookup
         user_cql = "currentUser()"
         target_email = email
+        account_id = get_current_user_account_id(base_url, auth_header, debug=args.debug)
 
     print(f"Fetching Confluence pages for: {target_email}  (since {since})")
 
@@ -254,14 +298,36 @@ def main():
     created = fetch_pages(base_url, auth_header, created_cql, debug=args.debug)
     print(f"{len(created)} found")
 
+    # Fetch pages the user contributed to but did not create.
+    # ORDER BY lastModified DESC + stop_before lets us bail out as soon as we
+    # reach pages that predate the review window, avoiding pagination through
+    # thousands of old edits. We then post-filter to pages where the user was
+    # the last editor (version.by.accountId == account_id) — the only reliable
+    # per-contribution signal available without fetching per-page version history.
     print("  Fetching contributed pages (edits to others' pages)...", end=" ", flush=True)
+    # No lastModified date filter in CQL — stop_before handles the cutoff by
+    # breaking pagination once a batch goes older than `since`. Adding the date
+    # filter here would make stop_before unreachable (all results would already
+    # satisfy it) and we'd paginate the full history.
     contributed_cql = (
         f'contributor = {user_cql} AND type = page '
-        f'AND creator != {user_cql} AND lastModified >= "{since}" '
+        f'AND creator != {user_cql} '
         f'ORDER BY lastModified DESC'
     )
-    contributed = fetch_pages(base_url, auth_header, contributed_cql, max_results=500, debug=args.debug)
+    # Cap at 1 000 scanned pages — enough for any realistic contributor.
+    # stop_before provides an earlier exit for typical cases; max_results is a
+    # safety net for highly active contributors whose recent-page count is large.
+    contributed = fetch_pages(
+        base_url, auth_header, contributed_cql,
+        stop_before=since, max_results=1000, debug=args.debug,
+    )
+    if account_id:
+        contributed = [p for p in contributed if p.get("_version_author_id") == account_id]
     print(f"{len(contributed)} found")
+
+    # Strip internal field before writing output
+    for p in created + contributed:
+        p.pop("_version_author_id", None)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(
