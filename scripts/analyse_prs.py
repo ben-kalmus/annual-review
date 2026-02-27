@@ -96,10 +96,13 @@ def analyse_authored(prs: list[dict], author: str) -> dict:
 
     # Who reviewed your work most (excluding self)
     reviewer_counts: Counter = Counter()
+    approver_counts: Counter = Counter()
     for pr in prs:
         for r in pr.get("reviews", []):
             if r["author"] != author:
                 reviewer_counts[r["author"]] += 1
+                if r.get("state") == "APPROVED":
+                    approver_counts[r["author"]] += 1
 
     return {
         "totals": {
@@ -132,6 +135,7 @@ def analyse_authored(prs: list[dict], author: str) -> dict:
         },
         "received_decisions": dict(received_decisions),
         "top_reviewers_of_your_work": dict(reviewer_counts.most_common(10)),
+        "top_approvers_of_your_work": dict(approver_counts.most_common(10)),
     }
 
 
@@ -236,6 +240,10 @@ def display(author: str, authored: dict, reviewed: dict | None) -> None:
     print(f"\n── Who Reviewed Your Work {'─' * 29}")
     for reviewer, n in authored["top_reviewers_of_your_work"].items():
         print(f"  {reviewer:<30} {n} review msgs")
+
+    print(f"\n── Who Approved Your PRs {'─' * 30}")
+    for approver, n in authored["top_approvers_of_your_work"].items():
+        print(f"  {approver:<30} {n} approvals")
 
     if reviewed:
         rv = reviewed
