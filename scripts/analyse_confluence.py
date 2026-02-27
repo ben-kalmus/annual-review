@@ -136,15 +136,21 @@ def display(author: str, data: dict) -> None:
         print()
         print(f"  {'v':>3}  {'last modified':<13}  title")
         print(f"  {'─' * 3}  {'─' * 13}  {'─' * 55}")
-        for v_num, title, last_mod in sorted(versions, reverse=True):
+        sorted_versions = sorted(versions, reverse=True)
+        for v_num, title, last_mod in sorted_versions[:_PAGE_LIST_LIMIT]:
             short = title[:55] + "..." if len(title) > 55 else title
             print(f"  {v_num:>3}  {last_mod:<13}  {short}")
+        if len(sorted_versions) > _PAGE_LIST_LIMIT:
+            print(f"  … and {len(sorted_versions) - _PAGE_LIST_LIMIT} more")
 
     # ── Page Lists ────────────────────────────────────────────
     _print_page_list("Pages Created", created, show_version=True)
     _print_page_list("Pages Edited (not created by you)", contributed, show_version=False)
 
     print()
+
+
+_PAGE_LIST_LIMIT = 20
 
 
 def _print_page_list(heading: str, pages: list[dict], show_version: bool = False) -> None:
@@ -163,7 +169,8 @@ def _print_page_list(heading: str, pages: list[dict], show_version: bool = False
         print(f"  {'─' * 8}  {'─' * 60}  {'─' * 10}")
 
     sort_field = "created" if show_version else "last_modified"
-    for p in sorted(pages, key=lambda x: x.get(sort_field) or "", reverse=True):
+    sorted_pages = sorted(pages, key=lambda x: x.get(sort_field) or "", reverse=True)
+    for p in sorted_pages[:_PAGE_LIST_LIMIT]:
         space = (p.get("space") or "")[:8]
         title = p.get("title") or ""
         date = (p.get("created") or "")[:10]
@@ -178,6 +185,9 @@ def _print_page_list(heading: str, pages: list[dict], show_version: bool = False
             if len(title) > 60:
                 title = title[:57] + "..."
             print(f"  {space:<8}  {title:<60}  {last_mod}")
+
+    if n > _PAGE_LIST_LIMIT:
+        print(f"  … and {n - _PAGE_LIST_LIMIT} more")
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
