@@ -142,7 +142,13 @@ def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool =
     return None
 
 
-def fetch_pages(base_url: str, auth_header: str, cql: str, debug: bool = False) -> list[dict]:
+def fetch_pages(
+    base_url: str,
+    auth_header: str,
+    cql: str,
+    max_results: int | None = None,
+    debug: bool = False,
+) -> list[dict]:
     url = f"{base_url}/wiki/rest/api/content/search"
     pages: list[dict] = []
     start = 0
@@ -175,7 +181,9 @@ def fetch_pages(base_url: str, auth_header: str, cql: str, debug: bool = False) 
         fetched = len(results)
         start += fetched
 
-        if fetched < _PAGE_LIMIT:
+        if fetched < _PAGE_LIMIT or not data.get("_links", {}).get("next"):
+            break
+        if max_results and len(pages) >= max_results:
             break
 
     return pages
@@ -249,9 +257,10 @@ def main():
     print("  Fetching contributed pages (edits to others' pages)...", end=" ", flush=True)
     contributed_cql = (
         f'contributor = {user_cql} AND type = page '
-        f'AND creator != {user_cql} AND lastModified >= "{since}"'
+        f'AND creator != {user_cql} AND lastModified >= "{since}" '
+        f'ORDER BY lastModified DESC'
     )
-    contributed = fetch_pages(base_url, auth_header, contributed_cql, debug=args.debug)
+    contributed = fetch_pages(base_url, auth_header, contributed_cql, max_results=500, debug=args.debug)
     print(f"{len(contributed)} found")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

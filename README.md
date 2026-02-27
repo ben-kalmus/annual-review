@@ -73,24 +73,28 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 
 ```bash
 # GitHub PRs only
-./scripts/collect_author.sh <github-login> --org my-company --since 2025-01-01
+./scripts/collect_author.sh <github-login> --git --org my-company --since 2025-01-01
 
-# GitHub PRs + JIRA + Confluence + Markdown export
-./scripts/collect_author.sh <github-login> --org my-company --since 2025-01-01 --jira --confluence --export-md
+# Everything: GitHub + JIRA + Confluence + Markdown export
+./scripts/collect_author.sh <github-login> --git --jira --confluence --org my-company --since 2025-01-01 --export-md
+
+# JIRA only (no GitHub fetch needed)
+./scripts/collect_author.sh <github-login> --jira
 
 # Re-fetch everything from scratch (ignore cache)
-./scripts/collect_author.sh <github-login> --org my-company --since 2025-01-01 --jira --confluence --export-md --force
+./scripts/collect_author.sh <github-login> --git --jira --confluence --org my-company --since 2025-01-01 --export-md --force
 ```
 
 **Flags:**
 
 | Flag | Description |
 |---|---|
-| `--since YYYY-MM-DD` | Only include activity from this date onwards |
+| `--git` | Fetch GitHub PRs (authored + reviewed) |
 | `--org <github-org>` | Limit PR discovery to this GitHub org (e.g. `my-company`). Omit to include all orgs. |
-| `--jira` | Strip `JIRA.csv` and run JIRA analysis (requires `JIRA.csv` in repo root — see below) |
-| `--confluence` | Fetch and analyse Confluence contributions (requires `.env` credentials) |
+| `--jira` | Strip `<login>.csv` and fetch sprint totals (requires `<login>.csv` in repo root — see below) |
+| `--confluence` | Fetch Confluence contributions (requires `.env` credentials) |
 | `--confluence-email` | Atlassian email of the person to fetch Confluence pages for (default: `JIRA_EMAIL`) |
+| `--since YYYY-MM-DD` | Only include activity from this date onwards |
 | `--export-md` | Generate `data/<login>_review.md` after all steps complete |
 | `--force` | Re-fetch all data even if cached output files already exist |
 

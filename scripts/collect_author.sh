@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
 # scripts/collect_author.sh
 #
-# Fetch and analyse all PR (and optionally JIRA/Confluence) data for a given
-# GitHub author in one shot.
+# Fetch and analyse GitHub PR, JIRA, and Confluence data for a given author.
 #
 # Usage:
-#   ./scripts/collect_author.sh <github-login>
-#   ./scripts/collect_author.sh <github-login> --since 2025-01-01
-#   ./scripts/collect_author.sh <github-login> --jira
-#   ./scripts/collect_author.sh <github-login> --confluence
-#   ./scripts/collect_author.sh <github-login> --org my-company --jira --confluence --export-md
-#   ./scripts/collect_author.sh <github-login> --force
+#   ./scripts/collect_author.sh <github-login> --git
+#   ./scripts/collect_author.sh <github-login> --git --jira --confluence --export-md
+#   ./scripts/collect_author.sh <github-login> --org my-company --git --jira --confluence --export-md
+#   ./scripts/collect_author.sh <github-login> --jira   # JIRA only, no GitHub fetch
 #
+# --git                   Fetch GitHub PRs (authored + reviewed).
+#                         Output: data/<author>_prs.json, data/<author>_reviewed_prs.json
 # --org                   GitHub org to limit PR discovery to (e.g. my-company).
 #                         Omit to include all orgs the user has activity in.
-# --jira                  Strip JIRA.csv (from repo root) and analyse it.
-#                         Input:  JIRA.csv  (must exist in repo root)
+# --jira                  Strip <author>.csv (from repo root) and fetch sprint totals.
+#                         Input:  <author>.csv  (must exist in repo root)
 #                         Output: data/<author>_jira_stripped.csv
-# --confluence            Fetch and analyse Confluence contributions (requires .env creds).
+# --confluence            Fetch Confluence contributions (requires .env creds).
 #                         Output: data/<author>_confluence.json
 # --confluence-email      Atlassian email of the person to fetch Confluence pages for.
 #                         Defaults to JIRA_EMAIL in .env (i.e. yourself).
@@ -39,7 +38,7 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
 fi
 
 if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 <github-login> [--since YYYY-MM-DD] [--jira] [--confluence] [--export-md] [--force]"
+    echo "Usage: $0 <github-login> [--git] [--jira] [--confluence] [--export-md] [--org <org>] [--since YYYY-MM-DD] [--force]"
     exit 1
 fi
 
@@ -48,6 +47,7 @@ shift
 
 SINCE=""
 ORG=""
+RUN_GIT=false
 RUN_JIRA=false
 RUN_CONFLUENCE=false
 CONFLUENCE_EMAIL=""
@@ -56,6 +56,7 @@ FORCE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --git)               RUN_GIT=true;             shift ;;
         --jira)              RUN_JIRA=true;            shift ;;
         --confluence)        RUN_CONFLUENCE=true;      shift ;;
         --confluence-email)  CONFLUENCE_EMAIL="$2";    shift 2 ;;
@@ -84,15 +85,17 @@ echo "════════════════════════�
 
 # ── Fetch ─────────────────────────────────────────
 
-echo ""
-echo "── Fetch: PRs (parallel) ────────────────────────"
-python3 "$SCRIPTS/fetch_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
-PID_AUTHORED=$!
-python3 "$SCRIPTS/fetch_reviewed_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
-PID_REVIEWED=$!
+if [[ "$RUN_GIT" == true ]]; then
+    echo ""
+    echo "── Fetch: PRs (parallel) ────────────────────────"
+    python3 "$SCRIPTS/fetch_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
+    PID_AUTHORED=$!
+    python3 "$SCRIPTS/fetch_reviewed_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
+    PID_REVIEWED=$!
 
-wait $PID_AUTHORED || { echo "Error: fetch_prs.py failed"; exit 1; }
-wait $PID_REVIEWED || { echo "Error: fetch_reviewed_prs.py failed"; exit 1; }
+    wait $PID_AUTHORED || { echo "Error: fetch_prs.py failed"; exit 1; }
+    wait $PID_REVIEWED || { echo "Error: fetch_reviewed_prs.py failed"; exit 1; }
+fi
 
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
@@ -119,9 +122,11 @@ fi
 
 # ── Analyse ───────────────────────────────────────
 
-echo ""
-echo "── Analyse: PRs ─────────────────────────────────"
-python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR"
+if [[ "$RUN_GIT" == true ]]; then
+    echo ""
+    echo "── Analyse: PRs ─────────────────────────────────"
+    python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR"
+fi
 
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
@@ -146,8 +151,10 @@ fi
 echo ""
 echo "════════════════════════════════════════════════"
 echo "  Done. Files written to $REPO_ROOT/data/"
-echo "    ${AUTHOR}_prs.json"
-echo "    ${AUTHOR}_reviewed_prs.json"
+if [[ "$RUN_GIT" == true ]]; then
+    echo "    ${AUTHOR}_prs.json"
+    echo "    ${AUTHOR}_reviewed_prs.json"
+fi
 if [[ "$RUN_JIRA" == true ]]; then
     echo "    ${AUTHOR}_jira_stripped.csv"
     [[ -f "data/${AUTHOR}_sprint_totals.json" ]] && echo "    ${AUTHOR}_sprint_totals.json"
