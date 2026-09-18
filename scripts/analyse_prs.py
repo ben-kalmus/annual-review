@@ -17,7 +17,7 @@ Usage:
 import argparse
 import json
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, median
 
@@ -282,11 +282,20 @@ def main():
     )
     parser.add_argument("--author", default=None, help="Filter to this author login")
     parser.add_argument(
+        "--since",
+        default=None,
+        help="Only include authored PRs created on/after this date (YYYY-MM-DD), "
+        "and reviews submitted on/after it",
+    )
+    parser.add_argument(
         "--output", default=None, help="Also write stats JSON to this path"
     )
     args = parser.parse_args()
 
     author = args.author
+    since_dt = parse_dt(args.since) if args.since else None
+    if since_dt and since_dt.tzinfo is None:
+        since_dt = since_dt.replace(tzinfo=timezone.utc)
 
     # Derive file paths from author when not explicitly provided
     input_path = (
@@ -310,6 +319,9 @@ def main():
         )
 
     prs = json.loads(input_path.read_text())
+
+    if since_dt:
+        prs = [pr for pr in prs if (dt := parse_dt(pr.get("createdAt"))) and dt >= since_dt]
 
     # Infer author from data if not explicitly supplied
     if not author:
@@ -342,6 +354,18 @@ def main():
     reviewed_path = reviewed_input_path
     if reviewed_path is not None and reviewed_path.exists():
         reviewed_prs = json.loads(reviewed_path.read_text())
+
+        if since_dt:
+            filtered = []
+            for pr in reviewed_prs:
+                kept_reviews = [
+                    r
+                    for r in pr.get("your_reviews", [])
+                    if (dt := parse_dt(r.get("submittedAt"))) and dt >= since_dt
+                ]
+                if kept_reviews:
+                    filtered.append({**pr, "your_reviews": kept_reviews})
+            reviewed_prs = filtered
 
         # Verify the reviewed file actually contains reviews by the expected author
         review_authors = {

@@ -307,11 +307,17 @@ def main():
         help="Sprint totals JSON (default: data/{author}_sprint_totals.json)",
     )
     parser.add_argument(
+        "--since",
+        default=None,
+        help="Only include tickets resolved on/after this date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
         "--output", default=None, help="Also write stats JSON to this path"
     )
     args = parser.parse_args()
 
     author = args.author
+    since_dt = parse_dt(args.since) if args.since else None
 
     if args.input:
         input_path = Path(args.input)
@@ -328,6 +334,9 @@ def main():
     with input_path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         rows = list(reader)
+
+    if since_dt:
+        rows = [r for r in rows if (dt := parse_dt(r.get("Resolved"))) and dt >= since_dt]
 
     # Infer JIRA display name from the Assignee column
     assignee_counts: Counter = Counter(
