@@ -26,6 +26,11 @@
 
 set -euo pipefail
 
+# Ctrl+C only kills the foreground shell, not the fetch_prs.py /
+# fetch_reviewed_prs.py children backgrounded below — kill them explicitly
+# so a cancelled run doesn't leave orphaned fetches still hitting the API.
+trap 'jobs -p | xargs -r kill 2>/dev/null' INT TERM EXIT
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPTS="$REPO_ROOT/scripts"
 
