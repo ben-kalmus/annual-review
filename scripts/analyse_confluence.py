@@ -44,6 +44,20 @@ def ym(date_str: str) -> str:
     return date_str[:7] if date_str and len(date_str) >= 7 else ""
 
 
+def filter_pages_since(data: dict, since: str) -> dict:
+    """filter_pages_since returns data with created pages created on or after since and edited pages modified on or after it."""
+    return {
+        **data,
+        "since": since,
+        "created": [p for p in data.get("created", []) if p.get("created", "")[:10] >= since],
+        "contributed": [
+            p
+            for p in data.get("contributed", [])
+            if (p.get("last_modified") or p.get("created", ""))[:10] >= since
+        ],
+    }
+
+
 # ── display ───────────────────────────────────────────────────────────────────
 
 
@@ -197,6 +211,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--author", default=None, help="GitHub login (used to derive default input path)")
     parser.add_argument("--input", default=None, help="Confluence JSON (default: data/{author}_confluence.json)")
+    parser.add_argument(
+        "--since",
+        default=None,
+        help="Only include pages created (yours) or last modified (others') on/after this date (YYYY-MM-DD)",
+    )
     parser.add_argument("--output", default=None, help="Also write summary stats JSON to this path")
     args = parser.parse_args()
 
@@ -213,6 +232,8 @@ def main():
         raise SystemExit(f"Input file not found: {input_path}")
 
     data = json.loads(input_path.read_text())
+    if args.since:
+        data = filter_pages_since(data, args.since)
 
     if not author:
         author = input_path.stem.removesuffix("_confluence") or "unknown"

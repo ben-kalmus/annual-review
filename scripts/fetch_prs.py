@@ -17,7 +17,8 @@ import argparse
 import json
 from pathlib import Path
 
-from pr_utils import START_DATE, current_user, discover_repos, fetch_prs_for_numbers, search_pr_numbers
+from pr_utils import START_DATE, current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
+from utils import warn_if_stale_cache
 
 
 def main():
@@ -34,6 +35,7 @@ def main():
 
     if output_path.exists() and not args.force:
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
+        warn_if_stale_cache(output_path, read_cache_since(output_path), args.since)
         return
 
     print(f"Fetching authored PRs for: {author}  (since {args.since})")
@@ -54,6 +56,7 @@ def main():
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(prs, indent=2))
+    write_cache_since(output_path, args.since)
 
     merged = sum(1 for pr in prs if pr["mergedAt"])
     open_  = sum(1 for pr in prs if pr["state"] == "OPEN")

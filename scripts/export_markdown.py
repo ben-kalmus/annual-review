@@ -22,8 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from analyse_prs import analyse_authored, analyse_reviewed
-from analyse_jira import analyse_jira as _analyse_jira
+from analyse_prs import analyse_authored, analyse_reviewed, filter_authored_since, filter_reviewed_since, parse_since
+from analyse_jira import analyse_jira as _analyse_jira, filter_tickets_since
+from analyse_confluence import filter_pages_since
 from utils import fmt_duration, fmt_int, pct
 
 
@@ -55,17 +56,22 @@ def hr() -> str:
 # ── Section builders ──────────────────────────────────────────────────────────
 
 
-def section_prs(prs_path: Path, reviewed_path: Path, author: str) -> str:
+def section_prs(prs_path: Path, reviewed_path: Path, author: str, since: str) -> str:
     if not prs_path.exists():
         return ""
 
+    since_dt = parse_since(since)
     prs = json.loads(prs_path.read_text())
     prs = [pr for pr in prs if pr.get("author") == author]
+    if since_dt:
+        prs = filter_authored_since(prs, since_dt)
     authored = analyse_authored(prs, author)
 
     reviewed_stats = None
     if reviewed_path and reviewed_path.exists():
         reviewed_prs = json.loads(reviewed_path.read_text())
+        if since_dt:
+            reviewed_prs = filter_reviewed_since(reviewed_prs, since_dt)
         reviewed_stats = analyse_reviewed(reviewed_prs, author)
 
     t   = authored["totals"]
@@ -149,12 +155,14 @@ def section_prs(prs_path: Path, reviewed_path: Path, author: str) -> str:
     return "\n".join(out)
 
 
-def section_jira(jira_path: Path, sprint_totals_path: Path, author: str) -> str:
+def section_jira(jira_path: Path, sprint_totals_path: Path, since: str) -> str:
     if not jira_path.exists():
         return ""
 
     with jira_path.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
+    if since:
+        rows = filter_tickets_since(rows, parse_since(since))
 
     assignee_counts: Counter = Counter(
         r.get("Assignee", "").strip() for r in rows if r.get("Assignee", "").strip()
@@ -271,11 +279,13 @@ def section_jira(jira_path: Path, sprint_totals_path: Path, author: str) -> str:
     return "\n".join(out)
 
 
-def section_confluence(confluence_path: Path) -> str:
+def section_confluence(confluence_path: Path, since: str) -> str:
     if not confluence_path.exists():
         return ""
 
     data = json.loads(confluence_path.read_text())
+    if since:
+        data = filter_pages_since(data, since)
     created    = data.get("created", [])
     contributed = data.get("contributed", [])
     all_pages  = created + contributed
@@ -401,7 +411,7 @@ def section_confluence(confluence_path: Path) -> str:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--author",  required=True, help="GitHub login")
-    parser.add_argument("--since",   default=None,  help="Review period start date (display only)")
+    parser.add_argument("--since",   default=None,  help="Only include activity on/after this date (YYYY-MM-DD)")
     parser.add_argument("--output",  default=None,  help="Output path (default: data/{author}_review.md)")
     args = parser.parse_args()
 
@@ -424,6 +434,7 @@ def main():
         prs_path      = data_dir / f"{author}_prs.json",
         reviewed_path = data_dir / f"{author}_reviewed_prs.json",
         author        = author,
+        since         = since,
     )
     if pr_section:
         sections.append(hr())
@@ -435,7 +446,7 @@ def main():
     jira_section = section_jira(
         jira_path          = data_dir / f"{author}_jira_stripped.csv",
         sprint_totals_path = data_dir / f"{author}_sprint_totals.json",
-        author             = author,
+        since              = since,
     )
     if jira_section:
         sections.append(hr())
@@ -446,6 +457,7 @@ def main():
     # Confluence
     conf_section = section_confluence(
         confluence_path = data_dir / f"{author}_confluence.json",
+        since           = since,
     )
     if conf_section:
         sections.append(hr())

@@ -130,19 +130,19 @@ fi
 if [[ "$RUN_GIT" == true ]]; then
     echo ""
     echo "── Analyse: PRs ─────────────────────────────────"
-    python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR"
+    python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
 fi
 
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
     echo "── Analyse: JIRA ────────────────────────────────"
-    python3 "$SCRIPTS/analyse_jira.py" --author "$AUTHOR"
+    python3 "$SCRIPTS/analyse_jira.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
 fi
 
 if [[ "$CONFLUENCE_OK" == true ]]; then
     echo ""
     echo "── Analyse: Confluence ──────────────────────────"
-    python3 "$SCRIPTS/analyse_confluence.py" --author "$AUTHOR"
+    python3 "$SCRIPTS/analyse_confluence.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
 fi
 
 # ── Export ────────────────────────────────────────

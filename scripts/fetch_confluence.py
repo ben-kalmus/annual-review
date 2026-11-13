@@ -30,6 +30,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from utils import warn_if_stale_cache
+
 
 _DEFAULT_SINCE = "2025-05-28"
 _MAX_RETRIES = 5
@@ -264,6 +266,7 @@ def main():
 
     if output_path.exists() and not args.force:
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
+        warn_if_stale_cache(output_path, json.loads(output_path.read_text()).get("since"), args.since)
         sys.exit(0)
 
     base_url = resolve(args.jira_url, "JIRA_URL", "jira-url").rstrip("/")

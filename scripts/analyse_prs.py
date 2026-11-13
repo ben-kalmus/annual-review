@@ -40,6 +40,32 @@ def days_between(a: str | None, b: str | None) -> float | None:
     return None
 
 
+def parse_since(s: str | None) -> datetime | None:
+    """parse_since returns the YYYY-MM-DD date s as a UTC datetime, or None when s is empty."""
+    if not s:
+        return None
+    return parse_dt(s).replace(tzinfo=timezone.utc)
+
+
+def filter_authored_since(prs: list[dict], since: datetime) -> list[dict]:
+    """filter_authored_since returns the PRs created on or after since."""
+    return [pr for pr in prs if (dt := parse_dt(pr.get("createdAt"))) and dt >= since]
+
+
+def filter_reviewed_since(reviewed_prs: list[dict], since: datetime) -> list[dict]:
+    """filter_reviewed_since keeps reviews submitted on or after since and drops PRs left with none."""
+    filtered = []
+    for pr in reviewed_prs:
+        kept = [
+            r
+            for r in pr.get("your_reviews", [])
+            if (dt := parse_dt(r.get("submittedAt"))) and dt >= since
+        ]
+        if kept:
+            filtered.append({**pr, "your_reviews": kept})
+    return filtered
+
+
 # ── core analysis ─────────────────────────────────────────────────────────────
 
 
@@ -293,9 +319,7 @@ def main():
     args = parser.parse_args()
 
     author = args.author
-    since_dt = parse_dt(args.since) if args.since else None
-    if since_dt and since_dt.tzinfo is None:
-        since_dt = since_dt.replace(tzinfo=timezone.utc)
+    since_dt = parse_since(args.since)
 
     # Derive file paths from author when not explicitly provided
     input_path = (
@@ -321,7 +345,7 @@ def main():
     prs = json.loads(input_path.read_text())
 
     if since_dt:
-        prs = [pr for pr in prs if (dt := parse_dt(pr.get("createdAt"))) and dt >= since_dt]
+        prs = filter_authored_since(prs, since_dt)
 
     # Infer author from data if not explicitly supplied
     if not author:
@@ -356,16 +380,7 @@ def main():
         reviewed_prs = json.loads(reviewed_path.read_text())
 
         if since_dt:
-            filtered = []
-            for pr in reviewed_prs:
-                kept_reviews = [
-                    r
-                    for r in pr.get("your_reviews", [])
-                    if (dt := parse_dt(r.get("submittedAt"))) and dt >= since_dt
-                ]
-                if kept_reviews:
-                    filtered.append({**pr, "your_reviews": kept_reviews})
-            reviewed_prs = filtered
+            reviewed_prs = filter_reviewed_since(reviewed_prs, since_dt)
 
         # Verify the reviewed file actually contains reviews by the expected author
         review_authors = {

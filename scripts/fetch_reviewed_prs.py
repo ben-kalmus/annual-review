@@ -21,7 +21,8 @@ import argparse
 import json
 from pathlib import Path
 
-from pr_utils import START_DATE, current_user, discover_repos, fetch_prs_for_numbers, search_pr_numbers
+from pr_utils import START_DATE, current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
+from utils import warn_if_stale_cache
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
 
     if output_path.exists() and not args.force:
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
+        warn_if_stale_cache(output_path, read_cache_since(output_path), args.since)
         return
 
     print(f"Fetching PRs reviewed by: {author}  (since {args.since})")
@@ -64,6 +66,7 @@ def main():
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(prs, indent=2))
+    write_cache_since(output_path, args.since)
 
     approved = sum(1 for pr in prs if any(r["state"] == "APPROVED" for r in pr["your_reviews"]))
     changes  = sum(1 for pr in prs if any(r["state"] == "CHANGES_REQUESTED" for r in pr["your_reviews"]))

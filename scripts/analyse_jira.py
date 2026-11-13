@@ -48,6 +48,15 @@ def days_between(a: str | None, b: str | None) -> float | None:
     return None
 
 
+def filter_tickets_since(rows: list[dict], since: datetime) -> list[dict]:
+    """filter_tickets_since returns rows resolved on or after since, using Created when Resolved is empty."""
+    return [
+        r
+        for r in rows
+        if (dt := parse_dt(r.get("Resolved")) or parse_dt(r.get("Created"))) and dt >= since
+    ]
+
+
 def all_sprints(row: dict) -> list[str]:
     """Return all non-empty sprint values for a ticket."""
     sprints = []
@@ -309,7 +318,8 @@ def main():
     parser.add_argument(
         "--since",
         default=None,
-        help="Only include tickets resolved on/after this date (YYYY-MM-DD)",
+        help="Only include tickets resolved on/after this date (YYYY-MM-DD). "
+        "Unresolved tickets use their Created date",
     )
     parser.add_argument(
         "--output", default=None, help="Also write stats JSON to this path"
@@ -336,7 +346,7 @@ def main():
         rows = list(reader)
 
     if since_dt:
-        rows = [r for r in rows if (dt := parse_dt(r.get("Resolved"))) and dt >= since_dt]
+        rows = filter_tickets_since(rows, since_dt)
 
     # Infer JIRA display name from the Assignee column
     assignee_counts: Counter = Counter(

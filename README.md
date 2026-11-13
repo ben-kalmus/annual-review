@@ -98,6 +98,20 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 | `--export-md` | Generate `data/<login>_review.md` after all steps complete |
 | `--force` | Re-fetch all data even if cached output files already exist |
 
+### Filtering by date (`--since`)
+
+`--since` limits both the fetch and the analysis. The analyse scripts and `export_markdown.py` also accept `--since`, so you can narrow cached data without re-fetching.
+
+| Source | Date field compared to `--since` |
+|---|---|
+| Authored PRs | PR `createdAt` |
+| Reviewed PRs | your review's `submittedAt` (PRs with no review left after the filter are dropped) |
+| JIRA tickets | `Resolved`, or `Created` when the ticket has no `Resolved` date |
+| Confluence pages you created | page `created` |
+| Confluence pages you edited | page `last_modified` |
+
+Filtering cached data cannot add activity that the fetch skipped. When a cached file starts later than `--since`, the fetch script prints a warning and keeps the cache (pass `--force` to re-fetch). PR caches record their start date in `data/<login>_prs.since` and `data/<login>_reviewed_prs.since`. Caches fetched before this file existed warn with an unknown date. The JIRA CSV has no recorded start date, so set the JQL `resolutiondate` to a date on or before `--since`.
+
 Output files are written to `data/` (gitignored):
 ```
 data/<login>_prs.json
