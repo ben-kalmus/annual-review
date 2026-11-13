@@ -17,7 +17,7 @@ import argparse
 import json
 from pathlib import Path
 
-from pr_utils import current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
+from pr_utils import current_user, discover_repos, fetch_prs_for_numbers, has_unresolved_dismissals, read_cache_since, search_pr_numbers, write_cache_since
 from utils import START_DATE, warn_if_stale_cache
 
 
@@ -33,7 +33,7 @@ def main():
     author = args.author or current_user()
     output_path = Path(args.output or f"data/{author}_prs.json")
 
-    if output_path.exists() and not args.force:
+    if output_path.exists() and not args.force and not has_unresolved_dismissals(output_path):
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
         warn_if_stale_cache(output_path, read_cache_since(output_path), args.since)
         return

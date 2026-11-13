@@ -21,8 +21,8 @@ import argparse
 import json
 from pathlib import Path
 
-from analyse_prs import filter_reviewed_since, parse_since
-from pr_utils import current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
+from analyse_prs import analyse_reviewed, filter_reviewed_since, parse_since
+from pr_utils import current_user, discover_repos, fetch_prs_for_numbers, has_unresolved_dismissals, read_cache_since, search_pr_numbers, write_cache_since
 from utils import START_DATE, warn_if_stale_cache
 
 
@@ -38,7 +38,7 @@ def main():
     author = args.author or current_user()
     output_path = Path(args.output or f"data/{author}_reviewed_prs.json")
 
-    if output_path.exists() and not args.force:
+    if output_path.exists() and not args.force and not has_unresolved_dismissals(output_path):
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
         warn_if_stale_cache(output_path, read_cache_since(output_path), args.since)
         return
@@ -72,14 +72,8 @@ def main():
     output_path.write_text(json.dumps(prs, indent=2))
     write_cache_since(output_path, args.since)
 
-    approved = sum(1 for pr in prs if any(r["state"] == "APPROVED" for r in pr["your_reviews"]))
-    changes  = sum(1 for pr in prs if any(r["state"] == "CHANGES_REQUESTED" for r in pr["your_reviews"]))
-    commented = sum(
-        1 for pr in prs
-        if pr["your_reviews"] and all(r["state"] == "COMMENTED" for r in pr["your_reviews"])
-    )
-
-    print(f"Total: {len(prs)} PRs reviewed — {approved} approved, {changes} changes requested, {commented} commented only")
+    verdicts = analyse_reviewed(prs, author)["prs_by_strongest_verdict"]
+    print(f"Total: {len(prs)} PRs reviewed — " + ", ".join(f"{n} {state}" for state, n in verdicts.items()))
     print(f"Written to: {output_path}")
 
 

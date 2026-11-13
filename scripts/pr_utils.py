@@ -12,24 +12,17 @@ import sys
 import time
 from pathlib import Path
 
-BATCH_SIZE = 50  # safe page size that avoids GraphQL 502s on large repos
+BATCH_SIZE = 25  # PRs per GraphQL query; larger batches risk 502s on large repos
 
-# Fields to fetch per PR via gh pr view
-PR_FIELDS = ",".join([
-    "number",
-    "title",
-    "state",
-    "isDraft",
-    "createdAt",
-    "mergedAt",
-    "additions",
-    "deletions",
-    "changedFiles",
-    "reviewDecision",
-    "reviews",
-    "url",
-    "author",
-])
+# Fields fetched per PR; dismissal events hold the state a dismissed review had before.
+PR_FIELDS = """
+    number title state isDraft createdAt mergedAt additions deletions changedFiles reviewDecision url
+    author { __typename login }
+    reviews(first: 100) { totalCount nodes { id state submittedAt author { login } } }
+    timelineItems(itemTypes: [REVIEW_DISMISSED_EVENT], first: 100) {
+        nodes { ... on ReviewDismissedEvent { previousReviewState review { id } } }
+    }
+"""
 
 
 _RATE_LIMIT_PHRASES = ("rate limit", "secondary rate", "429")
@@ -96,6 +89,11 @@ def write_cache_since(path: Path, since: str) -> None:
     path.with_suffix(".since").write_text(since)
 
 
+def has_unresolved_dismissals(path: Path) -> bool:
+    """has_unresolved_dismissals reports whether the cache at path was written before dismissed reviews kept their earlier state."""
+    return any(r["state"] == "DISMISSED" and not r.get("dismissed") for pr in json.loads(path.read_text()) for r in pr["reviews"])
+
+
 def discover_repos(query: str, since: str, org: str | None = None, date_field: str = "created") -> list[str]:
     """
     Discover all repos containing PRs matching `query` whose `date_field` is on or after `since`.
@@ -148,30 +146,32 @@ def search_pr_numbers(query: str, since: str, date_field: str = "created") -> li
     return results
 
 
-def fetch_pr(repo: str, number: int) -> dict | None:
-    """
-    Fetch full details for a single PR and return a normalised dict.
-    Returns None if the fetch fails.
-    """
-    pr = gh("pr", "view", str(number), "--repo", repo, "--json", PR_FIELDS)
-    if not pr or not isinstance(pr, dict):
+def login(actor: dict | None) -> str | None:
+    """login returns the PR author's login, prefixed with app/ for bots as gh prints it."""
+    if not actor:
         return None
+    return f"app/{actor['login']}" if actor["__typename"] == "Bot" else actor["login"]
 
-    pr["repo"] = repo
-    pr["reviews"] = [
-        {
-            "author": r["author"]["login"],
-            "state": r["state"],
-            "submittedAt": r.get("submittedAt", ""),
-        }
-        for r in pr.get("reviews", [])
-        if r.get("author")
-    ]
-    # Flatten author to just the login string
-    if isinstance(pr.get("author"), dict):
-        pr["author"] = pr["author"].get("login", "")
 
-    return pr
+def to_review(review: dict, previous_states: dict[str, str]) -> dict:
+    """to_review returns the review with a dismissed review's state replaced by its state before dismissal."""
+    out = {"author": review["author"]["login"], "state": review["state"], "submittedAt": review["submittedAt"]}
+    if review["state"] == "DISMISSED":
+        out["state"] = previous_states.get(review["id"], "DISMISSED")
+        out["dismissed"] = True
+    return out
+
+
+def to_pr(repo: str, node: dict) -> dict:
+    """to_pr returns the GraphQL pull request node in the cached PR shape."""
+    reviews = node.pop("reviews")
+    if reviews["totalCount"] > len(reviews["nodes"]):
+        print(f"\n  Warning: {repo}#{node['number']} has {reviews['totalCount']} reviews, keeping the first {len(reviews['nodes'])}", file=sys.stderr)
+    previous_states = {e["review"]["id"]: e["previousReviewState"] for e in node.pop("timelineItems")["nodes"] if e["review"]}
+    node["author"] = login(node["author"])
+    node["reviews"] = [to_review(r, previous_states) for r in reviews["nodes"] if r["author"]]
+    node["repo"] = repo
+    return node
 
 
 def fetch_prs_for_numbers(
@@ -179,17 +179,21 @@ def fetch_prs_for_numbers(
     label: str = "",
 ) -> list[dict]:
     """
-    Fetch full PR details for a list of (repo, number) pairs.
+    Fetch full PR details for a list of (repo, number) pairs, BATCH_SIZE PRs per GraphQL query.
     Prints a progress indicator. Returns sorted list by createdAt.
     """
-    results: dict[tuple[str, int], dict] = {}
-    total = len(numbers)
-    for i, (repo, number) in enumerate(numbers, 1):
+    unique = list(dict.fromkeys(numbers))
+    prs: list[dict] = []
+    for start in range(0, len(unique), BATCH_SIZE):
         if label:
-            print(f"\r  {label} {i}/{total}", end="", flush=True)
-        pr = fetch_pr(repo, number)
-        if pr:
-            results[(repo, number)] = pr
+            print(f"\r  {label} {min(start + BATCH_SIZE, len(unique))}/{len(unique)}", end="", flush=True)
+        batch = unique[start:start + BATCH_SIZE]
+        blocks = [
+            f'pr{i}: repository(owner: "{repo.split("/")[0]}", name: "{repo.split("/")[1]}") {{ pullRequest(number: {number}) {{ {PR_FIELDS} }} }}'
+            for i, (repo, number) in enumerate(batch)
+        ]
+        found = gh("api", "graphql", "-f", f"query={{ {' '.join(blocks)} }}").get("data") or {}
+        prs += [to_pr(repo, found[f"pr{i}"]["pullRequest"]) for i, (repo, _) in enumerate(batch) if found.get(f"pr{i}")]
     if label:
         print()
-    return sorted(results.values(), key=lambda p: p["createdAt"])
+    return sorted(prs, key=lambda p: p["createdAt"])
