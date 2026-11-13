@@ -22,8 +22,8 @@ import json
 from pathlib import Path
 
 from analyse_prs import filter_reviewed_since, parse_since
-from pr_utils import current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
-from utils import START_DATE, warn_if_stale_cache
+from pr_utils import current_user, discover_repos, fetch_prs_for_numbers, search_pr_numbers
+from utils import START_DATE, read_cache_since, warn_if_stale_cache, write_cache_since
 
 
 def main():

@@ -30,7 +30,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from atlassian import build_auth_header, get_json, post_json, require_env
+from atlassian import build_auth_header, get_json, post_json, require_env, search_issues
 from utils import add_email_arg, load_dotenv, name_from_email
 
 
@@ -155,40 +155,20 @@ def fetch_sprint_total(
     For each ticket, tries sp_fields in order and uses the first non-null value.
     """
     jql = f'project="{project}" AND sprint="{sprint_name}" AND status=Done'
-    total_tickets = 0
+    issues = search_issues(base_url, auth_header, jql, sp_fields, debug=debug)
     total_sp = 0.0
     null_sp_count = 0
-    next_page_token: str | None = None
 
-    while True:
-        body: dict = {"jql": jql, "fields": sp_fields, "maxResults": 100}
-        if next_page_token:
-            body["nextPageToken"] = next_page_token
-
-        data = post_json(
-            f"{base_url}/rest/api/3/search/jql",
-            auth_header,
-            body,
-            debug=debug,
-        )
-        issues = data.get("issues", [])
-
-        for issue in issues:
-            fields = issue.get("fields", {})
-            sp = next((fields[f] for f in sp_fields if fields.get(f) is not None), None)
-            if sp is not None:
-                total_sp += float(sp)
-            else:
-                null_sp_count += 1
-
-        total_tickets += len(issues)
-        next_page_token = data.get("nextPageToken")
-
-        if not issues or not next_page_token:
-            break
+    for issue in issues:
+        fields = issue.get("fields", {})
+        sp = next((fields[f] for f in sp_fields if fields.get(f) is not None), None)
+        if sp is not None:
+            total_sp += float(sp)
+        else:
+            null_sp_count += 1
 
     return {
-        "total_tickets": total_tickets,
+        "total_tickets": len(issues),
         "total_story_points": round(total_sp, 1),
         "_null_sp_count": null_sp_count,
     }

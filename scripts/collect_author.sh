@@ -18,8 +18,7 @@
 #                         Output: data/<author>_prs.json, data/<author>_reviewed_prs.json
 # --org                   GitHub org to limit PR discovery to (e.g. my-company).
 #                         Omit to include all orgs the user has activity in.
-# --jira                  Strip <author>.csv (from repo root) and fetch sprint totals.
-#                         Input:  <author>.csv  (must exist in repo root)
+# --jira                  Fetch resolved JIRA tickets and sprint totals from the JIRA API.
 #                         Output: data/<name>_jira.csv, data/<name>_sprint_totals.json
 # --confluence            Fetch Confluence contributions (requires .env creds).
 #                         Output: data/<name>_confluence.json
@@ -108,8 +107,9 @@ fi
 
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
-    echo "── Fetch: JIRA strip ────────────────────────────"
-    bash "$SCRIPTS/strip_jira.sh" --input "$REPO_ROOT/${AUTHOR}.csv" --output "$REPO_ROOT/data/${NAME}_jira.csv"
+    echo "── Fetch: JIRA ──────────────────────────────────"
+    python3 "$SCRIPTS/fetch_jira.py" --email "$EMAIL" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" \
+        || { echo "Error: fetch_jira.py failed (check JIRA credentials in .env)"; exit 1; }
 
     echo ""
     echo "── Fetch: Sprint Totals ─────────────────────────"

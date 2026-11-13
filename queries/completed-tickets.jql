@@ -1,5 +1,0 @@
-(assignee = currentUser() OR reporter = currentUser())
-  AND status = Done
-  AND resolutiondate >= "2025-05-28"
-  AND issuetype NOT IN ("Admin Access", "Access Request")
-ORDER BY resolutiondate ASC

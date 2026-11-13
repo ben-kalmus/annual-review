@@ -124,3 +124,16 @@ def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool =
         if user.get("emailAddress", "").lower() == email.lower():
             return user.get("accountId")
     return results[0].get("accountId") if results else None
+
+
+def search_issues(base_url: str, auth_header: str, jql: str, fields: list[str], debug: bool = False) -> list[dict]:
+    """search_issues returns every JIRA issue that matches jql, with the given fields, across all result pages."""
+    issues: list[dict] = []
+    body: dict = {"jql": jql, "fields": fields, "maxResults": 100}
+    while True:
+        # NOTE: API v2 returns descriptions as wiki-markup strings, the same text the CSV export held; v3 returns ADF documents.
+        data = post_json(f"{base_url}/rest/api/2/search/jql", auth_header, body, debug=debug)
+        issues.extend(data.get("issues", []))
+        if not data.get("nextPageToken"):
+            return issues
+        body["nextPageToken"] = data["nextPageToken"]

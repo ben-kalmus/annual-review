@@ -44,6 +44,17 @@ def name_from_email(email: str) -> str:
     return email.partition("@")[0]
 
 
+def read_cache_since(path: Path) -> str | None:
+    """read_cache_since returns the --since date recorded for the cache at path, or None when none was recorded."""
+    marker = path.with_suffix(".since")
+    return marker.read_text().strip() if marker.exists() else None
+
+
+def write_cache_since(path: Path, since: str) -> None:
+    """write_cache_since records since as the start date of the cache at path."""
+    path.with_suffix(".since").write_text(since)
+
+
 def warn_if_stale_cache(path: Path, cached_since: str | None, since: str) -> None:
     """warn_if_stale_cache prints a warning when the cache at path starts after since or has no recorded start."""
     if cached_since and cached_since <= since:

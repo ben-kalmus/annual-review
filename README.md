@@ -19,13 +19,11 @@ a single Markdown report you can paste directly into Confluence or Notion.
 |---|---|---|
 | **Python 3.10+** | `brew install python` | All analysis scripts |
 | **GitHub CLI (`gh`)** | `brew install gh` | Fetching PR data |
-| **Miller (`mlr`)** | `brew install miller` | Stripping JIRA CSV columns |
 
 Verify:
 ```bash
 python3 --version   # 3.10+
 gh --version
-mlr --version
 ```
 
 ---
@@ -47,9 +45,9 @@ gh auth status
 The scripts use your authenticated identity automatically. To run for a different
 person, pass `--author <github-login>` and `--email <atlassian-email>` (see [Running for a colleague](#running-for-a-colleague)).
 
-### 2. Configure JIRA / Confluence credentials (optional)
+### 2. Configure JIRA / Confluence credentials
 
-Required for sprint contribution %, team story points, and Confluence analysis.
+Required for JIRA tickets, sprint contribution %, and Confluence analysis.
 All three sections use the same Atlassian API token.
 
 ```bash
@@ -93,7 +91,7 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 | `--email <atlassian-email>` | Atlassian email of the person (default: `JIRA_EMAIL`). Names the JIRA and Confluence files. |
 | `--git` | Fetch GitHub PRs (authored + reviewed) |
 | `--org <github-org>` | Limit PR discovery to this GitHub org (e.g. `my-company`). Omit to include all orgs. |
-| `--jira` | Strip `<login>.csv` and fetch sprint totals (requires `<login>.csv` in repo root — see below) |
+| `--jira` | Fetch resolved JIRA tickets and sprint totals (requires `.env` credentials) |
 | `--confluence` | Fetch Confluence contributions (requires `.env` credentials) |
 | `--since YYYY-MM-DD` | Only include activity from this date onwards (default: `START_DATE` in `scripts/utils.py`) |
 | `--export-md` | Generate `data/<login>_review.md` after all steps complete |
@@ -113,7 +111,7 @@ Every script uses the same flags: the GitHub scripts take `--author`, the JIRA a
 | Confluence pages you created | page `created` |
 | Confluence pages you edited | page `last_modified` |
 
-Filtering cached data cannot add activity that the fetch skipped. When a cached file starts later than `--since`, the fetch script prints a warning and keeps the cache (pass `--force` to re-fetch). PR caches record their start date in `data/<login>_prs.since` and `data/<login>_reviewed_prs.since`. Caches fetched before this file existed warn with an unknown date. The JIRA CSV has no recorded start date, so set the JQL `resolutiondate` to a date on or before `--since`.
+Filtering cached data cannot add activity that the fetch skipped. When a cached file starts later than `--since`, the fetch script prints a warning and keeps the cache (pass `--force` to re-fetch). The fetch scripts record their start date in `data/<login>_prs.since`, `data/<login>_reviewed_prs.since` and `data/<name>_jira.since` (Confluence stores it inside the JSON). Caches fetched before these files existed warn with an unknown date.
 
 `fetch_reviewed_prs.py` searches for PRs updated on or after `--since`, so it finds PRs opened earlier that you reviewed later. It keeps only your reviews submitted on or after `--since`. Reviewed-PR caches fetched before this change searched by PR creation date and miss those PRs, so re-fetch them with `--force`.
 
@@ -153,50 +151,17 @@ review period. Fetched data is cached in `data/`; re-running analysis is instant
 
 ## JIRA Analysis
 
-### Step 1 — Export your tickets from the JIRA UI
-
-1. Open JIRA → **Issues → Advanced issue search**
-2. Switch to **JQL mode** (top-right of the search bar)
-3. Paste this [query file](queries/completed-tickets.jql) (adjust the date to your review start):
-   ```jql
-   (assignee = currentUser() OR reporter = currentUser())
-     AND status = Done
-     AND resolutiondate >= "2025-01-01"
-     AND issuetype NOT IN ("Admin Access", "Access Request")
-   ORDER BY resolutiondate ASC
-   ```
-4. Click **Export** (top-right) → **Export CSV (all fields)**
-5. Save as **`<github-login>.csv`** in the repo root (e.g. `john-doe.csv`)
-
-> **Important:** choose "all fields" — the strip script selects the relevant columns.
-> A partial export may be missing Sprint or Story Points.
-
-The JQL query is also saved in `queries/completed-tickets.jql`.
-
-![Export instructions](assets/jira_help.png)
-
-### Step 2 — Strip and analyse
-
-Strips the raw export down to the relevant columns and writes
-`data/<name>_jira.csv`:
+`fetch_jira.py` fetches tickets with status Done, resolved on or after `--since`, where the person is the assignee or the reporter. It skips the `Admin Access` and `Access Request` issue types, and writes `data/<name>_jira.csv`. Your own email queries `currentUser()`. Another email is resolved to an account ID first.
 
 ```bash
-bash scripts/strip_jira.sh --input <login>.csv --output data/<name>_jira.csv
+python3 scripts/fetch_jira.py --since 2025-01-01
+python3 scripts/fetch_sprint_totals.py
 python3 scripts/analyse_jira.py
 ```
 
-### Step 3 — Sprint contribution (optional, requires `.env`)
+`fetch_sprint_totals.py` fetches team ticket and story point totals for each sprint in the CSV, so you can see your share of each sprint's completed work. It discovers the story points field from your JIRA instance.
 
-Fetches team ticket and story point totals per sprint from the JIRA API, so you
-can see your share of each sprint's completed work. The story points field is
-auto-discovered from your JIRA instance — no configuration needed.
-
-```bash
-python3 scripts/fetch_sprint_totals.py
-python3 scripts/analyse_jira.py   # re-run to pick up totals
-```
-
-Sprint totals are cached in `data/<name>_sprint_totals.json`.
+The CSV keeps the first two labels and the first three sprints of each ticket. Both files are cached in `data/`. Pass `--force` to re-fetch.
 
 ---
 
@@ -241,8 +206,7 @@ and emphasis render natively.
 You can use **your own API token** — no need to share credentials.
 
 - **GitHub PRs** are scoped by `--author <github-login>`
-- **Confluence** pages are fetched for whoever's email is passed via `--email`; your `.env` token is used for auth
-- **JIRA** analysis reads from a `JIRA.csv` export — ask your colleague to export their own (see [Step 1](#step-1--export-your-tickets-from-the-jira-ui)) and place it in the repo root before running
+- **JIRA** tickets and **Confluence** pages are fetched for whoever's email is passed via `--email`; your `.env` token is used for auth
 
 ```bash
 ./scripts/collect_author.sh \
