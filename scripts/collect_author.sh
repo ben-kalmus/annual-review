@@ -76,6 +76,7 @@ if [[ -z "$EMAIL" && ( "$RUN_JIRA" == true || "$RUN_CONFLUENCE" == true || "$EXP
 fi
 NAME="${EMAIL%%@*}"
 
+# NOTE: macOS ships bash 3.2, which treats an empty array as unset under set -u, so each expansion below uses ${ARR[@]+"${ARR[@]}"}.
 SINCE_ARGS=()
 [[ -n "$SINCE" ]] && SINCE_ARGS=(--since "$SINCE")
 
@@ -96,9 +97,9 @@ echo "════════════════════════�
 if [[ "$RUN_GIT" == true ]]; then
     echo ""
     echo "── Fetch: PRs (parallel) ────────────────────────"
-    python3 "$SCRIPTS/fetch_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
+    python3 "$SCRIPTS/fetch_prs.py" --author "$AUTHOR" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"} ${ORG_ARGS[@]+"${ORG_ARGS[@]}"} ${FORCE_ARG[@]+"${FORCE_ARG[@]}"} &
     PID_AUTHORED=$!
-    python3 "$SCRIPTS/fetch_reviewed_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${ORG_ARGS[@]}" "${FORCE_ARG[@]}" &
+    python3 "$SCRIPTS/fetch_reviewed_prs.py" --author "$AUTHOR" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"} ${ORG_ARGS[@]+"${ORG_ARGS[@]}"} ${FORCE_ARG[@]+"${FORCE_ARG[@]}"} &
     PID_REVIEWED=$!
 
     wait $PID_AUTHORED || { echo "Error: fetch_prs.py failed"; exit 1; }
@@ -108,19 +109,19 @@ fi
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
     echo "── Fetch: JIRA ──────────────────────────────────"
-    python3 "$SCRIPTS/fetch_jira.py" --email "$EMAIL" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" \
+    python3 "$SCRIPTS/fetch_jira.py" --email "$EMAIL" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"} ${FORCE_ARG[@]+"${FORCE_ARG[@]}"} \
         || { echo "Error: fetch_jira.py failed (check JIRA credentials in .env)"; exit 1; }
 
     echo ""
     echo "── Fetch: Sprint Totals ─────────────────────────"
-    python3 "$SCRIPTS/fetch_sprint_totals.py" --email "$EMAIL" "${FORCE_ARG[@]}" \
+    python3 "$SCRIPTS/fetch_sprint_totals.py" --email "$EMAIL" ${FORCE_ARG[@]+"${FORCE_ARG[@]}"} \
         || echo "  Sprint totals unavailable — continuing without (check JIRA credentials in .env)."
 fi
 
 if [[ "$RUN_CONFLUENCE" == true ]]; then
     echo ""
     echo "── Fetch: Confluence ────────────────────────────"
-    if python3 "$SCRIPTS/fetch_confluence.py" --email "$EMAIL" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}"; then
+    if python3 "$SCRIPTS/fetch_confluence.py" --email "$EMAIL" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"} ${FORCE_ARG[@]+"${FORCE_ARG[@]}"}; then
         CONFLUENCE_OK=true
     else
         echo "  Confluence fetch failed — skipping analysis (check JIRA credentials in .env)."
@@ -132,19 +133,19 @@ fi
 if [[ "$RUN_GIT" == true ]]; then
     echo ""
     echo "── Analyse: PRs ─────────────────────────────────"
-    python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
+    python3 "$SCRIPTS/analyse_prs.py" --author "$AUTHOR" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"}
 fi
 
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
     echo "── Analyse: JIRA ────────────────────────────────"
-    python3 "$SCRIPTS/analyse_jira.py" --email "$EMAIL" "${SINCE_ARGS[@]}"
+    python3 "$SCRIPTS/analyse_jira.py" --email "$EMAIL" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"}
 fi
 
 if [[ "$CONFLUENCE_OK" == true ]]; then
     echo ""
     echo "── Analyse: Confluence ──────────────────────────"
-    python3 "$SCRIPTS/analyse_confluence.py" --email "$EMAIL" "${SINCE_ARGS[@]}"
+    python3 "$SCRIPTS/analyse_confluence.py" --email "$EMAIL" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"}
 fi
 
 # ── Export ────────────────────────────────────────
@@ -152,7 +153,7 @@ fi
 if [[ "$EXPORT_MD" == true ]]; then
     echo ""
     echo "── Export: Markdown ─────────────────────────────"
-    python3 "$SCRIPTS/export_markdown.py" --author "$AUTHOR" --email "$EMAIL" "${SINCE_ARGS[@]}"
+    python3 "$SCRIPTS/export_markdown.py" --author "$AUTHOR" --email "$EMAIL" ${SINCE_ARGS[@]+"${SINCE_ARGS[@]}"}
 fi
 
 echo ""

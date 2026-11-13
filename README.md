@@ -13,16 +13,19 @@ a single Markdown report you can paste directly into Confluence or Notion.
 
 ---
 
-## Dependencies
+## Prerequisites (macOS)
 
 | Tool | Install | Used for |
 |---|---|---|
+| **Homebrew** | see [brew.sh](https://brew.sh) | Installing the tools below |
 | **Python 3.10+** | `brew install python` | All analysis scripts |
 | **GitHub CLI (`gh`)** | `brew install gh` | Fetching PR data |
 
+The scripts run on the Bash that ships with macOS, and the Python scripts use only the standard library, so there is nothing else to install.
+
 Verify:
 ```bash
-python3 --version   # 3.10+
+python3 --version   # 3.10+ (the macOS built-in python3 is 3.9 and will not work)
 gh --version
 ```
 
