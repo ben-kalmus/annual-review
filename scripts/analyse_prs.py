@@ -8,10 +8,9 @@ time-to-merge — designed to be run for the primary author and peers for
 direct comparison.
 
 Usage:
-    python3 scripts/analyse_prs.py
-    python3 scripts/analyse_prs.py --input data/prs.json --reviewed-input data/reviewed_prs.json
-    python3 scripts/analyse_prs.py --input data/prs_peer.json --reviewed-input data/reviewed_prs_peer.json --author peer-login
-    python3 scripts/analyse_prs.py --output data/pr_stats.json   # also write JSON
+    python3 scripts/analyse_prs.py --author <github-login>
+    python3 scripts/analyse_prs.py --author peer-login --input data/prs_peer.json --reviewed-input data/reviewed_prs_peer.json
+    python3 scripts/analyse_prs.py --author <github-login> --output data/pr_stats.json   # also write JSON
 """
 
 import argparse
@@ -21,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, median
 
-from utils import fmt_duration, fmt_int, pct
+from utils import START_DATE, fmt_duration, fmt_int, pct
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -306,12 +305,12 @@ def main():
         default=None,
         help="Reviewed PRs JSON (default: data/{author}_reviewed_prs.json)",
     )
-    parser.add_argument("--author", default=None, help="Filter to this author login")
+    parser.add_argument("--author", required=True, help="GitHub login")
     parser.add_argument(
         "--since",
-        default=None,
+        default=START_DATE,
         help="Only include authored PRs created on/after this date (YYYY-MM-DD), "
-        "and reviews submitted on/after it",
+        f"and reviews submitted on/after it (default: {START_DATE})",
     )
     parser.add_argument(
         "--output", default=None, help="Also write stats JSON to this path"
@@ -320,49 +319,15 @@ def main():
 
     author = args.author
     since_dt = parse_since(args.since)
-
-    # Derive file paths from author when not explicitly provided
-    input_path = (
-        Path(args.input)
-        if args.input
-        else Path(f"data/{author}_prs.json")
-        if author
-        else None
-    )
-    reviewed_input_path = (
-        Path(args.reviewed_input)
-        if args.reviewed_input
-        else Path(f"data/{author}_reviewed_prs.json")
-        if author
-        else None
-    )
-
-    if input_path is None:
-        parser.error(
-            "Pass --author <login> or --input <path> to specify whose data to analyse."
-        )
+    input_path = Path(args.input or f"data/{author}_prs.json")
+    reviewed_path = Path(args.reviewed_input or f"data/{author}_reviewed_prs.json")
 
     prs = json.loads(input_path.read_text())
 
     if since_dt:
         prs = filter_authored_since(prs, since_dt)
 
-    # Infer author from data if not explicitly supplied
-    if not author:
-        authors = {pr.get("author") for pr in prs if pr.get("author")}
-        if len(authors) == 1:
-            author = authors.pop()
-            reviewed_input_path = Path(f"data/{author}_reviewed_prs.json")
-        elif len(authors) == 0:
-            print(
-                "Warning: no 'author' field in PR data. Re-run fetch_prs.py or pass --author."
-            )
-            author = "unknown"
-        else:
-            print(f"Multiple authors found: {authors}. Pass --author to filter.")
-            author = "unknown"
-    else:
-        prs = [pr for pr in prs if pr.get("author") == author]
+    prs = [pr for pr in prs if pr.get("author") == author]
 
     authored_stats = analyse_authored(prs, author)
 
@@ -370,13 +335,12 @@ def main():
     if args.input and not args.reviewed_input:
         print(
             f"Warning: --input is set to '{args.input}' but --reviewed-input was not provided. "
-            f"Defaulting to '{reviewed_input_path}'. Pass --reviewed-input to be explicit."
+            f"Defaulting to '{reviewed_path}'. Pass --reviewed-input to be explicit."
         )
 
     # Load reviewed PRs if the file exists
     reviewed_stats = None
-    reviewed_path = reviewed_input_path
-    if reviewed_path is not None and reviewed_path.exists():
+    if reviewed_path.exists():
         reviewed_prs = json.loads(reviewed_path.read_text())
 
         if since_dt:
@@ -386,7 +350,7 @@ def main():
         review_authors = {
             r["author"] for pr in reviewed_prs for r in pr.get("your_reviews", [])
         }
-        if review_authors and author not in review_authors and author != "unknown":
+        if review_authors and author not in review_authors:
             print(
                 f"Warning: '{args.reviewed_input}' does not appear to contain reviews by '{author}'. "
                 f"Found reviewer(s): {', '.join(sorted(review_authors))}. "

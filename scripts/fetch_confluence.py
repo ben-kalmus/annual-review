@@ -6,113 +6,29 @@ Produces two lists:
   created     — pages where the author is the original creator
   contributed — pages the author edited but did not create
 
-Output: data/{author}_confluence.json
+Output: data/{name}_confluence.json, where name is the email before the @
 
 Usage:
-    python3 scripts/fetch_confluence.py --author <your-login>
-    python3 scripts/fetch_confluence.py --author <your-login> --since 2025-01-01
-    python3 scripts/fetch_confluence.py --author <your-login> --force
+    python3 scripts/fetch_confluence.py
+    python3 scripts/fetch_confluence.py --email colleague@your-org.com --since 2025-01-01
+    python3 scripts/fetch_confluence.py --force
 
-Auth (all three required — flag overrides env var):
-    export JIRA_URL=https://your-org.atlassian.net
-    export JIRA_EMAIL=you@your-org.com
-    export JIRA_TOKEN=<your-api-token>
+Auth (read from the environment or .env):
+    JIRA_URL=https://your-org.atlassian.net
+    JIRA_EMAIL=you@your-org.com
+    JIRA_TOKEN=<your-api-token>
 """
 
 import argparse
-import base64
 import json
-import os
 import sys
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from pathlib import Path
 
-from utils import warn_if_stale_cache
+from atlassian import build_auth_header, get_json, lookup_user, require_env
+from utils import START_DATE, add_email_arg, load_dotenv, name_from_email, warn_if_stale_cache
 
 
-_DEFAULT_SINCE = "2025-05-28"
-_MAX_RETRIES = 5
-_RATE_LIMIT_WAIT = 60
-_BACKOFF_BASE = 5
 _PAGE_LIMIT = 50
-
-
-def load_dotenv(dotenv_path: Path) -> None:
-    if not dotenv_path.exists():
-        return
-    for line in dotenv_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        key = key.strip()
-        val = val.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = val
-
-
-def build_auth_header(email: str, token: str) -> str:
-    raw = f"{email}:{token}".encode("utf-8")
-    return "Basic " + base64.b64encode(raw).decode("ascii")
-
-
-def _read_error_body(exc: urllib.error.HTTPError) -> str:
-    try:
-        return exc.read().decode("utf-8", errors="replace")
-    except Exception:
-        return "(could not read response body)"
-
-
-def confluence_get(url: str, auth_header: str, params: dict, debug: bool = False) -> dict:
-    full_url = f"{url}?{urllib.parse.urlencode(params)}" if params else url
-    if debug:
-        print(f"\n  GET {full_url}", file=sys.stderr)
-    req = urllib.request.Request(
-        full_url,
-        headers={"Authorization": auth_header, "Accept": "application/json"},
-    )
-
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-
-        except urllib.error.HTTPError as exc:
-            body = _read_error_body(exc)
-            print(f"\n  HTTP {exc.code} from {url}", file=sys.stderr)
-            print(f"  Response: {body[:500]}", file=sys.stderr)
-
-            if exc.code == 401:
-                raise RuntimeError("Authentication failed — check JIRA_EMAIL and JIRA_TOKEN") from exc
-            if exc.code == 403:
-                raise RuntimeError("Forbidden — token may lack read permissions on Confluence") from exc
-            if exc.code == 429:
-                wait = int(exc.headers.get("Retry-After", _RATE_LIMIT_WAIT))
-                print(f"  Rate limit hit — waiting {wait}s...", file=sys.stderr)
-                time.sleep(wait)
-            else:
-                wait = _BACKOFF_BASE * (2 ** attempt)
-                print(f"  Retrying in {wait}s (attempt {attempt}/{_MAX_RETRIES})...", file=sys.stderr)
-                if attempt == _MAX_RETRIES:
-                    raise RuntimeError(
-                        f"Confluence API error after {_MAX_RETRIES} retries: HTTP {exc.code}\n"
-                        f"  URL: {full_url}\n  Detail: {body[:500]}"
-                    ) from exc
-                time.sleep(wait)
-
-        except urllib.error.URLError as exc:
-            wait = _BACKOFF_BASE * (2 ** attempt)
-            print(f"\n  Network error ({exc.reason}) — retrying in {wait}s...", file=sys.stderr)
-            if attempt == _MAX_RETRIES:
-                raise RuntimeError(f"Network error after {_MAX_RETRIES} retries: {exc.reason}") from exc
-            time.sleep(wait)
-
-    return {}
 
 
 def _extract_date(page: dict) -> str:
@@ -124,30 +40,10 @@ def _extract_date(page: dict) -> str:
     return raw[:10] if raw else ""
 
 
-def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool = False) -> str | None:
-    """Look up an Atlassian account ID by email. Returns None if not found."""
-    try:
-        results = confluence_get(
-            f"{base_url}/rest/api/3/user/search",
-            auth_header,
-            {"query": email},
-            debug=debug,
-        )
-        if isinstance(results, list):
-            for user in results:
-                if user.get("emailAddress", "").lower() == email.lower():
-                    return user.get("accountId")
-            if results:
-                return results[0].get("accountId")
-    except Exception:
-        pass
-    return None
-
-
 def get_current_user_account_id(base_url: str, auth_header: str, debug: bool = False) -> str | None:
     """Return the account ID of the authenticated user via the Confluence API."""
     try:
-        result = confluence_get(
+        result = get_json(
             f"{base_url}/wiki/rest/api/user/current",
             auth_header,
             {},
@@ -184,7 +80,7 @@ def fetch_pages(
             "start": start,
             "expand": "space,history.createdDate,version",
         }
-        data = confluence_get(url, auth_header, params, debug=debug)
+        data = get_json(url, auth_header, params, debug=debug)
         results = data.get("results", [])
 
         for r in results:
@@ -233,65 +129,44 @@ def fetch_pages(
     return unique
 
 
-def resolve(flag_val: str | None, env_key: str, label: str) -> str:
-    value = flag_val or os.environ.get(env_key)
-    if not value:
-        print(f"Error: --{label.lower().replace(' ', '-')} / {env_key} is required", file=sys.stderr)
-        sys.exit(1)
-    return value
-
-
 def main():
-    _repo_root = Path(__file__).resolve().parent.parent
-    load_dotenv(_repo_root / ".env")
+    load_dotenv()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--author", required=True, help="GitHub login; drives default output path")
-    parser.add_argument("--jira-url", default=None, help="Atlassian base URL (env: JIRA_URL)")
-    parser.add_argument("--email", default=None, help="Your Atlassian account email for auth (env: JIRA_EMAIL)")
-    parser.add_argument("--token", default=None, help="Your API token (env: JIRA_TOKEN)")
-    parser.add_argument("--confluence-email", default=None,
-                        help="Atlassian email of the person to fetch pages for "
-                             "(default: same as --email). Use this to fetch a "
-                             "colleague's pages with your own token.")
-    parser.add_argument("--since", default=_DEFAULT_SINCE,
-                        help=f"Only include pages touched on or after this date (default: {_DEFAULT_SINCE})")
-    parser.add_argument("--output", default=None, help="Output JSON (default: data/{author}_confluence.json)")
+    add_email_arg(parser)
+    parser.add_argument("--since", default=START_DATE,
+                        help=f"Only include pages touched on or after this date (default: {START_DATE})")
+    parser.add_argument("--output", default=None, help="Output JSON (default: data/{name}_confluence.json)")
     parser.add_argument("--force", action="store_true", help="Re-fetch even if output already exists")
     parser.add_argument("--debug", action="store_true", help="Print request URLs and error bodies")
     args = parser.parse_args()
 
-    author = args.author
-    output_path = Path(args.output or f"data/{author}_confluence.json")
+    output_path = Path(args.output or f"data/{name_from_email(args.email)}_confluence.json")
 
     if output_path.exists() and not args.force:
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
         warn_if_stale_cache(output_path, json.loads(output_path.read_text()).get("since"), args.since)
         sys.exit(0)
 
-    base_url = resolve(args.jira_url, "JIRA_URL", "jira-url").rstrip("/")
-    email = resolve(args.email, "JIRA_EMAIL", "email")
-    token = resolve(args.token, "JIRA_TOKEN", "token")
-    auth_header = build_auth_header(email, token)
+    base_url = require_env("JIRA_URL").rstrip("/")
+    auth_header = build_auth_header()
     since = args.since
+    target_email = args.email
 
     account_id: str | None = None
-    colleague_email = args.confluence_email
-    if colleague_email and colleague_email != email:
+    if target_email != require_env("JIRA_EMAIL"):
         # Querying for a colleague — resolve their account ID for CQL
-        print(f"Looking up account ID for: {colleague_email}...", end=" ", flush=True)
-        account_id = lookup_account_id(base_url, auth_header, colleague_email, debug=args.debug)
+        print(f"Looking up account ID for: {target_email}...", end=" ", flush=True)
+        account_id = (lookup_user(base_url, auth_header, target_email, debug=args.debug) or {}).get("accountId")
         if account_id:
             user_cql = f'"{account_id}"'
             print(f"found ({account_id})")
         else:
-            user_cql = f'"{colleague_email}"'
+            user_cql = f'"{target_email}"'
             print("not found — falling back to email in CQL")
-        target_email = colleague_email
     else:
         # Querying for yourself — currentUser() is reliable and avoids account ID lookup
         user_cql = "currentUser()"
-        target_email = email
         account_id = get_current_user_account_id(base_url, auth_header, debug=args.debug)
 
     print(f"Fetching Confluence pages for: {target_email}  (since {since})")
@@ -334,7 +209,7 @@ def main():
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(
-        {"email": email, "since": since, "created": created, "contributed": contributed},
+        {"email": target_email, "since": since, "created": created, "contributed": contributed},
         indent=2,
     ))
     print(f"Confluence data written to: {output_path}")

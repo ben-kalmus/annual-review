@@ -22,13 +22,13 @@ import json
 from pathlib import Path
 
 from analyse_prs import filter_reviewed_since, parse_since
-from pr_utils import START_DATE, current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
-from utils import warn_if_stale_cache
+from pr_utils import current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
+from utils import START_DATE, warn_if_stale_cache
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--since",  default=START_DATE)
+    parser.add_argument("--since",  default=START_DATE, help=f"Only include reviews submitted on or after this date (default: {START_DATE})")
     parser.add_argument("--author", default=None, help="GitHub username (defaults to current authenticated user)")
     parser.add_argument("--org",    default=None, help="Limit results to this GitHub org (e.g. my-company). Omit to include all orgs.")
     parser.add_argument("--output", default=None, help="Output path (default: data/{author}_reviewed_prs.json)")

@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
 # scripts/collect_author.sh
 #
-# Fetch and analyse GitHub PR, JIRA, and Confluence data for a given author.
+# Fetch and analyse GitHub PR, JIRA, and Confluence data for one person.
 #
 # Usage:
-#   ./scripts/collect_author.sh <github-login> --git
-#   ./scripts/collect_author.sh <github-login> --git --jira --confluence --export-md
-#   ./scripts/collect_author.sh <github-login> --org my-company --git --jira --confluence --export-md
-#   ./scripts/collect_author.sh <github-login> --jira   # JIRA only, no GitHub fetch
+#   ./scripts/collect_author.sh --git
+#   ./scripts/collect_author.sh --git --jira --confluence --export-md
+#   ./scripts/collect_author.sh --author <github-login> --email <atlassian-email> --org my-company --git --jira --confluence --export-md
+#   ./scripts/collect_author.sh --jira   # JIRA only, no GitHub fetch
 #
+# --author                GitHub login (default: the login gh is authenticated as).
+#                         Names the GitHub files: data/<author>_*.
+# --email                 Atlassian email of the person (default: JIRA_EMAIL in .env).
+#                         Names the JIRA and Confluence files: data/<name>_*, where
+#                         <name> is the email before the @.
 # --git                   Fetch GitHub PRs (authored + reviewed).
 #                         Output: data/<author>_prs.json, data/<author>_reviewed_prs.json
 # --org                   GitHub org to limit PR discovery to (e.g. my-company).
 #                         Omit to include all orgs the user has activity in.
-# --jira                  Strip <author>.csv (from repo root) and fetch sprint totals.
-#                         Input:  <author>.csv  (must exist in repo root)
-#                         Output: data/<author>_jira_stripped.csv
+# --jira                  Fetch resolved JIRA tickets and sprint totals from the JIRA API.
+#                         Output: data/<name>_jira.json, data/<name>_sprint_totals.json
 # --confluence            Fetch Confluence contributions (requires .env creds).
-#                         Output: data/<author>_confluence.json
-# --confluence-email      Atlassian email of the person to fetch Confluence pages for.
-#                         Defaults to JIRA_EMAIL in .env (i.e. yourself).
-#                         Use this to fetch a colleague's pages with your own token.
+#                         Output: data/<name>_confluence.json
 # --export-md             Generate data/<author>_review.md after all steps succeed.
+# --since                 Start date, YYYY-MM-DD (default: START_DATE in scripts/utils.py).
 # --force                 Re-fetch all data even if output files already exist.
 
 set -euo pipefail
@@ -42,29 +44,23 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
     set +a
 fi
 
-if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 <github-login> [--git] [--jira] [--confluence] [--export-md] [--org <org>] [--since YYYY-MM-DD] [--force]"
-    exit 1
-fi
-
-AUTHOR="$1"
-shift
-
+AUTHOR=""
+EMAIL="${JIRA_EMAIL:-}"
 SINCE=""
 ORG=""
 RUN_GIT=false
 RUN_JIRA=false
 RUN_CONFLUENCE=false
-CONFLUENCE_EMAIL=""
 EXPORT_MD=false
 FORCE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --author)            AUTHOR="$2";              shift 2 ;;
+        --email)             EMAIL="$2";               shift 2 ;;
         --git)               RUN_GIT=true;             shift ;;
         --jira)              RUN_JIRA=true;            shift ;;
         --confluence)        RUN_CONFLUENCE=true;      shift ;;
-        --confluence-email)  CONFLUENCE_EMAIL="$2";    shift 2 ;;
         --export-md)         EXPORT_MD=true;           shift ;;
         --force)             FORCE=true;               shift ;;
         --since)             SINCE="$2";               shift 2 ;;
@@ -72,6 +68,13 @@ while [[ $# -gt 0 ]]; do
         *)                   echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+[[ -z "$AUTHOR" ]] && AUTHOR="$(gh api user --jq .login)"
+if [[ -z "$EMAIL" && ( "$RUN_JIRA" == true || "$RUN_CONFLUENCE" == true || "$EXPORT_MD" == true ) ]]; then
+    echo "Error: --email or JIRA_EMAIL in .env is required for --jira, --confluence and --export-md"
+    exit 1
+fi
+NAME="${EMAIL%%@*}"
 
 SINCE_ARGS=()
 [[ -n "$SINCE" ]] && SINCE_ARGS=(--since "$SINCE")
@@ -85,7 +88,7 @@ FORCE_ARG=()
 CONFLUENCE_OK=false
 
 echo "════════════════════════════════════════════════"
-echo "  Collecting data for: $AUTHOR"
+echo "  Collecting data for: $AUTHOR ${EMAIL:+($EMAIL)}"
 echo "════════════════════════════════════════════════"
 
 # ── Fetch ─────────────────────────────────────────
@@ -104,21 +107,20 @@ fi
 
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
-    echo "── Fetch: JIRA strip ────────────────────────────"
-    bash "$SCRIPTS/strip_jira.sh" --author "$AUTHOR"
+    echo "── Fetch: JIRA ──────────────────────────────────"
+    python3 "$SCRIPTS/fetch_jira.py" --email "$EMAIL" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" \
+        || { echo "Error: fetch_jira.py failed (check JIRA credentials in .env)"; exit 1; }
 
     echo ""
     echo "── Fetch: Sprint Totals ─────────────────────────"
-    python3 "$SCRIPTS/fetch_sprint_totals.py" --author "$AUTHOR" "${FORCE_ARG[@]}" \
+    python3 "$SCRIPTS/fetch_sprint_totals.py" --email "$EMAIL" "${FORCE_ARG[@]}" \
         || echo "  Sprint totals unavailable — continuing without (check JIRA credentials in .env)."
 fi
 
 if [[ "$RUN_CONFLUENCE" == true ]]; then
     echo ""
     echo "── Fetch: Confluence ────────────────────────────"
-    CONFLUENCE_EMAIL_ARGS=()
-    [[ -n "$CONFLUENCE_EMAIL" ]] && CONFLUENCE_EMAIL_ARGS=(--confluence-email "$CONFLUENCE_EMAIL")
-    if python3 "$SCRIPTS/fetch_confluence.py" --author "$AUTHOR" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}" "${CONFLUENCE_EMAIL_ARGS[@]}"; then
+    if python3 "$SCRIPTS/fetch_confluence.py" --email "$EMAIL" "${SINCE_ARGS[@]}" "${FORCE_ARG[@]}"; then
         CONFLUENCE_OK=true
     else
         echo "  Confluence fetch failed — skipping analysis (check JIRA credentials in .env)."
@@ -136,13 +138,13 @@ fi
 if [[ "$RUN_JIRA" == true ]]; then
     echo ""
     echo "── Analyse: JIRA ────────────────────────────────"
-    python3 "$SCRIPTS/analyse_jira.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
+    python3 "$SCRIPTS/analyse_jira.py" --email "$EMAIL" "${SINCE_ARGS[@]}"
 fi
 
 if [[ "$CONFLUENCE_OK" == true ]]; then
     echo ""
     echo "── Analyse: Confluence ──────────────────────────"
-    python3 "$SCRIPTS/analyse_confluence.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
+    python3 "$SCRIPTS/analyse_confluence.py" --email "$EMAIL" "${SINCE_ARGS[@]}"
 fi
 
 # ── Export ────────────────────────────────────────
@@ -150,7 +152,7 @@ fi
 if [[ "$EXPORT_MD" == true ]]; then
     echo ""
     echo "── Export: Markdown ─────────────────────────────"
-    python3 "$SCRIPTS/export_markdown.py" --author "$AUTHOR" "${SINCE_ARGS[@]}"
+    python3 "$SCRIPTS/export_markdown.py" --author "$AUTHOR" --email "$EMAIL" "${SINCE_ARGS[@]}"
 fi
 
 echo ""
@@ -161,10 +163,10 @@ if [[ "$RUN_GIT" == true ]]; then
     echo "    ${AUTHOR}_reviewed_prs.json"
 fi
 if [[ "$RUN_JIRA" == true ]]; then
-    echo "    ${AUTHOR}_jira_stripped.csv"
-    [[ -f "data/${AUTHOR}_sprint_totals.json" ]] && echo "    ${AUTHOR}_sprint_totals.json"
+    echo "    ${NAME}_jira.json"
+    [[ -f "data/${NAME}_sprint_totals.json" ]] && echo "    ${NAME}_sprint_totals.json"
 fi
-[[ -f "data/${AUTHOR}_confluence.json" ]] && echo "    ${AUTHOR}_confluence.json"
+[[ -f "data/${NAME}_confluence.json" ]] && echo "    ${NAME}_confluence.json"
 if [[ "$EXPORT_MD" == true ]]; then
     echo "    ${AUTHOR}_review.md"
 fi

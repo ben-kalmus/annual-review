@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """
-Analyse JIRA ticket statistics from a stripped CSV produced by strip_jira.sh.
+Analyse JIRA ticket statistics from the JSON written by fetch_jira.py.
 
 Produces a summary covering: ticket counts (assigned / reported / both),
 issue type, priority, project, story points, cycle time, epics/initiatives,
 and sprint breakdown — all detail sections scoped to tickets assigned to you.
 
 Usage:
-    python3 scripts/analyse_jira.py --author user-name
-    python3 scripts/analyse_jira.py --input data/<your-login>_jira_stripped.csv
-    python3 scripts/analyse_jira.py --input data/<your-login>_jira_stripped.csv --output data/jira_stats.json
+    python3 scripts/analyse_jira.py
+    python3 scripts/analyse_jira.py --email colleague@your-org.com
+    python3 scripts/analyse_jira.py --input data/<name>_jira.json --output data/jira_stats.json
 """
 
 import argparse
-import csv
 import json
 import sys
 from collections import Counter
@@ -21,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, median
 
-from utils import fmt_duration, fmt_int, pct
+from utils import START_DATE, add_email_arg, fmt_duration, fmt_int, load_dotenv, name_from_email, pct
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -57,41 +56,21 @@ def filter_tickets_since(rows: list[dict], since: datetime) -> list[dict]:
     ]
 
 
-def all_sprints(row: dict) -> list[str]:
-    """Return all non-empty sprint values for a ticket."""
-    sprints = []
-    for col in ("Sprint", "Sprint_2", "Sprint_3"):
-        val = row.get(col, "").strip()
-        if val:
-            sprints.append(val)
-    return sprints
-
-
 def story_points(row: dict) -> int | None:
-    raw = row.get("Custom field (Story Points)", "").strip()
-    if not raw:
-        return None
-    try:
-        return int(float(raw))
-    except ValueError:
-        return None
+    sp = row.get("Story Points")
+    return None if sp is None else int(sp)
 
 
 # ── core analysis ─────────────────────────────────────────────────────────────
 
 
-def analyse_jira(rows: list[dict], jira_name: str) -> dict:
+def analyse_jira(rows: list[dict], account_id: str) -> dict:
     total = len(rows)
 
     # Assigned / reported counts — top-level only, uses full dataset
-    assigned_rows = [r for r in rows if r.get("Assignee", "").strip() == jira_name]
-    reported = sum(1 for r in rows if r.get("Reporter", "").strip() == jira_name)
-    both = sum(
-        1
-        for r in rows
-        if r.get("Assignee", "").strip() == jira_name
-        and r.get("Reporter", "").strip() == jira_name
-    )
+    assigned_rows = [r for r in rows if r["Assignee ID"] == account_id]
+    reported = sum(1 for r in rows if r["Reporter ID"] == account_id)
+    both = sum(1 for r in assigned_rows if r["Reporter ID"] == account_id)
     assigned = len(assigned_rows)
 
     # ── Everything below is scoped to assigned_rows ──────────────────────────
@@ -135,7 +114,7 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
     sprint_sp: dict[str, int] = {}
     for r in assigned_rows:
         sp = story_points(r)
-        for s in all_sprints(r):
+        for s in r["Sprints"]:
             sprint_tickets[s] += 1
             sprint_sp[s] = sprint_sp.get(s, 0) + (sp or 0)
 
@@ -180,9 +159,7 @@ def analyse_jira(rows: list[dict], jira_name: str) -> dict:
 # ── display ───────────────────────────────────────────────────────────────────
 
 
-def display(
-    author: str, jira_name: str, stats: dict, sprint_totals: dict | None = None
-) -> None:
+def display(author: str, stats: dict, sprint_totals: dict | None = None) -> None:
     t = stats["totals"]
     sp = stats["story_points"]
     ct = stats["cycle_time_days"]
@@ -299,66 +276,46 @@ def display(
 
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser()
+    add_email_arg(parser)
     parser.add_argument(
         "--input",
         default=None,
-        help="Stripped JIRA CSV (default: data/{author}_jira_stripped.csv)",
-    )
-    parser.add_argument(
-        "--author",
-        default=None,
-        help="GitHub login (used to derive default input path)",
+        help="JIRA tickets JSON from fetch_jira.py (default: data/{name}_jira.json)",
     )
     parser.add_argument(
         "--sprint-totals",
         default=None,
-        help="Sprint totals JSON (default: data/{author}_sprint_totals.json)",
+        help="Sprint totals JSON (default: data/{name}_sprint_totals.json)",
     )
     parser.add_argument(
         "--since",
-        default=None,
+        default=START_DATE,
         help="Only include tickets resolved on/after this date (YYYY-MM-DD). "
-        "Unresolved tickets use their Created date",
+        f"Unresolved tickets use their Created date (default: {START_DATE})",
     )
     parser.add_argument(
         "--output", default=None, help="Also write stats JSON to this path"
     )
     args = parser.parse_args()
 
-    author = args.author
+    email = args.email
+    name = name_from_email(email)
     since_dt = parse_dt(args.since) if args.since else None
-
-    if args.input:
-        input_path = Path(args.input)
-    elif author:
-        input_path = Path(f"data/{author}_jira_stripped.csv")
-    else:
-        parser.error(
-            "Pass --author <login> or --input <path> to specify which CSV to analyse."
-        )
+    input_path = Path(args.input or f"data/{name}_jira.json")
 
     if not input_path.exists():
-        parser.error(f"Input file not found: {input_path}")
+        parser.error(f"{input_path} not found. Run: python3 scripts/fetch_jira.py --email {email}")
 
-    with input_path.open(newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        rows = list(reader)
+    jira = json.loads(input_path.read_text())
+    rows = jira["tickets"]
 
     if since_dt:
         rows = filter_tickets_since(rows, since_dt)
 
-    # Infer JIRA display name from the Assignee column
-    assignee_counts: Counter = Counter(
-        r.get("Assignee", "").strip() for r in rows if r.get("Assignee", "").strip()
-    )
-    jira_name = assignee_counts.most_common(1)[0][0] if assignee_counts else ""
-
-    if not author:
-        author = input_path.stem.removesuffix("_jira") or "unknown"
-
     # Load sprint totals if available
-    sprint_totals_path = Path(args.sprint_totals or f"data/{author}_sprint_totals.json")
+    sprint_totals_path = Path(args.sprint_totals or f"data/{name}_sprint_totals.json")
     sprint_totals: dict | None = None
     if sprint_totals_path.exists():
         sprint_totals = json.loads(sprint_totals_path.read_text())
@@ -366,19 +323,19 @@ def main():
         # Only print the note when using the default auto-derived path
         print(
             f"Note: {sprint_totals_path} not found — sprint contribution % unavailable. "
-            f"Run: python3 scripts/fetch_sprint_totals.py --author {author}",
+            f"Run: python3 scripts/fetch_sprint_totals.py --email {email}",
             file=sys.stderr,
         )
 
-    stats = analyse_jira(rows, jira_name)
-    display(author, jira_name, stats, sprint_totals=sprint_totals)
+    stats = analyse_jira(rows, jira["account_id"])
+    display(f"{jira['display_name']} ({email})", stats, sprint_totals=sprint_totals)
 
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(
             json.dumps(
-                {"author": author, "jira_name": jira_name, "jira": stats}, indent=2
+                {"email": email, "display_name": jira["display_name"], "jira": stats}, indent=2
             )
         )
         print(f"Stats written to: {args.output}")

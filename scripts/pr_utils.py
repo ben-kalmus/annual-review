@@ -12,7 +12,6 @@ import sys
 import time
 from pathlib import Path
 
-START_DATE = "2025-05-28"
 BATCH_SIZE = 50  # safe page size that avoids GraphQL 502s on large repos
 
 # Fields to fetch per PR via gh pr view
