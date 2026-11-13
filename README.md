@@ -45,7 +45,7 @@ gh auth status
 ```
 
 The scripts use your authenticated identity automatically. To run for a different
-person, pass `--author <github-login>` — they must be a member of the org.
+person, pass `--author <github-login>` and `--email <atlassian-email>` (see [Running for a colleague](#running-for-a-colleague)).
 
 ### 2. Configure JIRA / Confluence credentials (optional)
 
@@ -65,7 +65,7 @@ JIRA_TOKEN=your-api-token-here
 
 Get an API token at: **Atlassian account settings → Security → API tokens**
 
-`.env` is gitignored — never commit it.
+`.env` is gitignored — never commit it. The scripts read these values only from `.env` or the environment, so the token never appears on the command line.
 
 ---
 
@@ -73,30 +73,33 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 
 ```bash
 # GitHub PRs only
-./scripts/collect_author.sh <github-login> --git --org my-company --since 2025-01-01
+./scripts/collect_author.sh --git --org my-company --since 2025-01-01
 
 # Everything: GitHub + JIRA + Confluence + Markdown export
-./scripts/collect_author.sh <github-login> --git --jira --confluence --org my-company --since 2025-01-01 --export-md
+./scripts/collect_author.sh --git --jira --confluence --org my-company --since 2025-01-01 --export-md
 
 # JIRA only (no GitHub fetch needed)
-./scripts/collect_author.sh <github-login> --jira
+./scripts/collect_author.sh --jira
 
 # Re-fetch everything from scratch (ignore cache)
-./scripts/collect_author.sh <github-login> --git --jira --confluence --org my-company --since 2025-01-01 --export-md --force
+./scripts/collect_author.sh --git --jira --confluence --org my-company --since 2025-01-01 --export-md --force
 ```
 
 **Flags:**
 
 | Flag | Description |
 |---|---|
+| `--author <github-login>` | GitHub login of the person (default: the login `gh` is authenticated as). Names the GitHub files. |
+| `--email <atlassian-email>` | Atlassian email of the person (default: `JIRA_EMAIL`). Names the JIRA and Confluence files. |
 | `--git` | Fetch GitHub PRs (authored + reviewed) |
 | `--org <github-org>` | Limit PR discovery to this GitHub org (e.g. `my-company`). Omit to include all orgs. |
 | `--jira` | Strip `<login>.csv` and fetch sprint totals (requires `<login>.csv` in repo root — see below) |
 | `--confluence` | Fetch Confluence contributions (requires `.env` credentials) |
-| `--confluence-email` | Atlassian email of the person to fetch Confluence pages for (default: `JIRA_EMAIL`) |
-| `--since YYYY-MM-DD` | Only include activity from this date onwards |
+| `--since YYYY-MM-DD` | Only include activity from this date onwards (default: `START_DATE` in `scripts/utils.py`) |
 | `--export-md` | Generate `data/<login>_review.md` after all steps complete |
 | `--force` | Re-fetch all data even if cached output files already exist |
+
+Every script uses the same flags: the GitHub scripts take `--author`, the JIRA and Confluence scripts take `--email`, and `export_markdown.py` takes both. Every script that filters by date takes `--since` with the same default.
 
 ### Filtering by date (`--since`)
 
@@ -114,15 +117,17 @@ Filtering cached data cannot add activity that the fetch skipped. When a cached 
 
 `fetch_reviewed_prs.py` searches for PRs updated on or after `--since`, so it finds PRs opened earlier that you reviewed later. It keeps only your reviews submitted on or after `--since`. Reviewed-PR caches fetched before this change searched by PR creation date and miss those PRs, so re-fetch them with `--force`.
 
-Output files are written to `data/` (gitignored):
+Output files are written to `data/` (gitignored). GitHub files use the GitHub login. JIRA and Confluence files use `<name>`, the email before the `@`:
 ```
 data/<login>_prs.json
 data/<login>_reviewed_prs.json
-data/<login>_jira_stripped.csv      (--jira)
-data/<login>_sprint_totals.json     (--jira, with .env credentials)
-data/<login>_confluence.json        (--confluence)
+data/<name>_jira.csv                (--jira)
+data/<name>_sprint_totals.json      (--jira, with .env credentials)
+data/<name>_confluence.json         (--confluence)
 data/<login>_review.md              (--export-md)
 ```
+
+Caches from before this naming used `data/<login>_jira_stripped.csv`, `data/<login>_sprint_totals.json` and `data/<login>_confluence.json`. Rename them to the `<name>` prefix, or re-fetch with `--force`.
 
 ---
 
@@ -141,7 +146,7 @@ python3 scripts/fetch_reviewed_prs.py --author <login> --org my-company --since 
 python3 scripts/analyse_prs.py --author <login>
 ```
 
-The default `--since` date is set in `scripts/pr_utils.py` — update `START_DATE` for your
+The default `--since` date is `START_DATE` in `scripts/utils.py` — update it for your
 review period. Fetched data is cached in `data/`; re-running analysis is instant.
 
 ---
@@ -173,11 +178,11 @@ The JQL query is also saved in `queries/completed-tickets.jql`.
 ### Step 2 — Strip and analyse
 
 Strips the raw export down to the relevant columns and writes
-`data/<login>_jira_stripped.csv`:
+`data/<name>_jira.csv`:
 
 ```bash
-bash scripts/strip_jira.sh --author <login>
-python3 scripts/analyse_jira.py --author <login>
+bash scripts/strip_jira.sh --input <login>.csv --output data/<name>_jira.csv
+python3 scripts/analyse_jira.py
 ```
 
 ### Step 3 — Sprint contribution (optional, requires `.env`)
@@ -187,11 +192,11 @@ can see your share of each sprint's completed work. The story points field is
 auto-discovered from your JIRA instance — no configuration needed.
 
 ```bash
-python3 scripts/fetch_sprint_totals.py --author <login>
-python3 scripts/analyse_jira.py --author <login>   # re-run to pick up totals
+python3 scripts/fetch_sprint_totals.py
+python3 scripts/analyse_jira.py   # re-run to pick up totals
 ```
 
-Sprint totals are cached in `data/<login>_sprint_totals.json`.
+Sprint totals are cached in `data/<name>_sprint_totals.json`.
 
 ---
 
@@ -204,11 +209,11 @@ for pages you own.
 Requires the same `.env` credentials used for JIRA.
 
 ```bash
-python3 scripts/fetch_confluence.py --author <login> --since 2025-01-01
-python3 scripts/analyse_confluence.py --author <login>
+python3 scripts/fetch_confluence.py --since 2025-01-01
+python3 scripts/analyse_confluence.py
 ```
 
-Data is cached in `data/<login>_confluence.json`. Pass `--force` to re-fetch.
+Data is cached in `data/<name>_confluence.json`. Pass `--force` to re-fetch.
 
 ---
 
@@ -236,19 +241,21 @@ and emphasis render natively.
 You can use **your own API token** — no need to share credentials.
 
 - **GitHub PRs** are scoped by `--author <github-login>`
-- **Confluence** pages are fetched for whoever's email is passed via `--confluence-email`; your `.env` token is used for auth
+- **Confluence** pages are fetched for whoever's email is passed via `--email`; your `.env` token is used for auth
 - **JIRA** analysis reads from a `JIRA.csv` export — ask your colleague to export their own (see [Step 1](#step-1--export-your-tickets-from-the-jira-ui)) and place it in the repo root before running
 
 ```bash
-./scripts/collect_author.sh their-github-login \
+./scripts/collect_author.sh \
+  --author their-github-login \
+  --email their-atlassian@your-org.com \
   --since 2025-01-01 \
   --jira \
-  --confluence --confluence-email their-atlassian@your-org.com \
+  --confluence \
   --export-md
 ```
 
 Output is written to `data/their-github-login_review.md`; all intermediate
-files are scoped to their login so your own cached data is unaffected.
+files are scoped to their login or email name so your own cached data is unaffected.
 
 ---
 

@@ -2,25 +2,25 @@
 """
 Fetch total team ticket counts and story points per sprint from the JIRA REST API.
 
-Reads the author's stripped JIRA CSV to discover which sprints they worked in,
+Reads the person's JIRA CSV to discover which sprints they worked in,
 then queries JIRA for the full team's resolved tickets in each of those sprints.
 Output is cached to avoid hitting the API on every analysis run.
 
-Output: data/{author}_sprint_totals.json
+Output: data/{name}_sprint_totals.json, where name is the email before the @
   {
     "Composition #41": {"total_tickets": 25, "total_story_points": 80.0},
     ...
   }
 
 Usage:
-    python3 scripts/fetch_sprint_totals.py --author <your-login>
-    python3 scripts/fetch_sprint_totals.py --author <your-login> --force
-    python3 scripts/fetch_sprint_totals.py --author <your-login> --sp-field customfield_10028
+    python3 scripts/fetch_sprint_totals.py
+    python3 scripts/fetch_sprint_totals.py --email colleague@your-org.com --force
+    python3 scripts/fetch_sprint_totals.py --sp-field customfield_10028
 
-Auth (all three required — flag overrides env var):
-    export JIRA_URL=https://your-org.atlassian.net
-    export JIRA_EMAIL=you@your-org.com
-    export JIRA_TOKEN=<your-api-token>
+Auth (read from the environment or .env):
+    JIRA_URL=https://your-org.atlassian.net
+    JIRA_EMAIL=you@your-org.com
+    JIRA_TOKEN=<your-api-token>
 """
 
 import argparse
@@ -30,7 +30,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from atlassian import build_auth_header, get_json, load_dotenv, post_json, resolve
+from atlassian import build_auth_header, get_json, post_json, require_env
+from utils import add_email_arg, load_dotenv, name_from_email
 
 
 # ── constants ─────────────────────────────────────────────────────────────────
@@ -197,23 +198,10 @@ def fetch_sprint_total(
 
 
 def main():
-    # Load .env from repo root before anything else so env vars are available
-    _repo_root = Path(__file__).resolve().parent.parent
-    load_dotenv(_repo_root / ".env")
+    load_dotenv()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--author", required=True, help="GitHub login; drives default file paths"
-    )
-    parser.add_argument(
-        "--jira-url", default=None, help="JIRA base URL (env: JIRA_URL)"
-    )
-    parser.add_argument(
-        "--email", default=None, help="Atlassian account email (env: JIRA_EMAIL)"
-    )
-    parser.add_argument(
-        "--token", default=None, help="JIRA API token (env: JIRA_TOKEN)"
-    )
+    add_email_arg(parser)
     parser.add_argument(
         "--project", default=None, help="Project key (default: inferred from CSV)"
     )
@@ -225,12 +213,12 @@ def main():
     parser.add_argument(
         "--input",
         default=None,
-        help="Stripped JIRA CSV (default: data/{author}_jira_stripped.csv)",
+        help="JIRA CSV (default: data/{name}_jira.csv)",
     )
     parser.add_argument(
         "--output",
         default=None,
-        help="Output JSON (default: data/{author}_sprint_totals.json)",
+        help="Output JSON (default: data/{name}_sprint_totals.json)",
     )
     parser.add_argument(
         "--force", action="store_true", help="Re-fetch even if output already exists"
@@ -242,9 +230,9 @@ def main():
     )
     args = parser.parse_args()
 
-    author = args.author
-    input_path = Path(args.input or f"data/{author}_jira_stripped.csv")
-    output_path = Path(args.output or f"data/{author}_sprint_totals.json")
+    name = name_from_email(args.email)
+    input_path = Path(args.input or f"data/{name}_jira.csv")
+    output_path = Path(args.output or f"data/{name}_sprint_totals.json")
 
     if not input_path.exists():
         print(f"Error: input file not found: {input_path}", file=sys.stderr)
@@ -255,11 +243,8 @@ def main():
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
         sys.exit(0)
 
-    # Credential resolution
-    base_url = resolve(args.jira_url, "JIRA_URL", "jira-url").rstrip("/")
-    email = resolve(args.email, "JIRA_EMAIL", "email")
-    token = resolve(args.token, "JIRA_TOKEN", "token")
-    auth_header = build_auth_header(email, token)
+    base_url = require_env("JIRA_URL").rstrip("/")
+    auth_header = build_auth_header()
 
     # Project and sprints
     project = args.project or infer_project(input_path)

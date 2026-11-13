@@ -9,7 +9,7 @@ or use collect_author.sh --jira to populate everything in one go.
 Usage:
     python3 scripts/export_markdown.py --author <your-login>
     python3 scripts/export_markdown.py --author <your-login> --output review.md
-    python3 scripts/export_markdown.py --author <your-login> --since 2025-05-28
+    python3 scripts/export_markdown.py --author <peer-login> --email peer@your-org.com --since 2025-05-28
 """
 
 import argparse
@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from analyse_prs import analyse_authored, analyse_reviewed, filter_authored_since, filter_reviewed_since, parse_since
 from analyse_jira import analyse_jira as _analyse_jira, filter_tickets_since
 from analyse_confluence import filter_pages_since
-from utils import fmt_duration, fmt_int, pct
+from utils import START_DATE, add_email_arg, fmt_duration, fmt_int, load_dotenv, name_from_email, pct
 
 
 # ── Markdown primitives ───────────────────────────────────────────────────────
@@ -409,13 +409,16 @@ def section_confluence(confluence_path: Path, since: str) -> str:
 
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--author",  required=True, help="GitHub login")
-    parser.add_argument("--since",   default=None,  help="Only include activity on/after this date (YYYY-MM-DD)")
+    add_email_arg(parser)
+    parser.add_argument("--since",   default=START_DATE, help=f"Only include activity on/after this date (YYYY-MM-DD, default: {START_DATE})")
     parser.add_argument("--output",  default=None,  help="Output path (default: data/{author}_review.md)")
     args = parser.parse_args()
 
     author      = args.author
+    name        = name_from_email(args.email)
     data_dir    = Path("data")
     output_path = Path(args.output or f"data/{author}_review.md")
 
@@ -444,26 +447,26 @@ def main():
 
     # JIRA
     jira_section = section_jira(
-        jira_path          = data_dir / f"{author}_jira_stripped.csv",
-        sprint_totals_path = data_dir / f"{author}_sprint_totals.json",
+        jira_path          = data_dir / f"{name}_jira.csv",
+        sprint_totals_path = data_dir / f"{name}_sprint_totals.json",
         since              = since,
     )
     if jira_section:
         sections.append(hr())
         sections.append(jira_section)
     else:
-        print(f"Note: {data_dir}/{author}_jira_stripped.csv not found — skipping JIRA section.")
+        print(f"Note: {data_dir}/{name}_jira.csv not found — skipping JIRA section.")
 
     # Confluence
     conf_section = section_confluence(
-        confluence_path = data_dir / f"{author}_confluence.json",
+        confluence_path = data_dir / f"{name}_confluence.json",
         since           = since,
     )
     if conf_section:
         sections.append(hr())
         sections.append(conf_section)
     else:
-        print(f"Note: {data_dir}/{author}_confluence.json not found — skipping Confluence section.")
+        print(f"Note: {data_dir}/{name}_confluence.json not found — skipping Confluence section.")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(sections))

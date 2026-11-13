@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Analyse JIRA ticket statistics from a stripped CSV produced by strip_jira.sh.
+Analyse JIRA ticket statistics from a JIRA CSV.
 
 Produces a summary covering: ticket counts (assigned / reported / both),
 issue type, priority, project, story points, cycle time, epics/initiatives,
 and sprint breakdown — all detail sections scoped to tickets assigned to you.
 
 Usage:
-    python3 scripts/analyse_jira.py --author user-name
-    python3 scripts/analyse_jira.py --input data/<your-login>_jira_stripped.csv
-    python3 scripts/analyse_jira.py --input data/<your-login>_jira_stripped.csv --output data/jira_stats.json
+    python3 scripts/analyse_jira.py
+    python3 scripts/analyse_jira.py --email colleague@your-org.com
+    python3 scripts/analyse_jira.py --input data/<name>_jira.csv --output data/jira_stats.json
 """
 
 import argparse
@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, median
 
-from utils import fmt_duration, fmt_int, pct
+from utils import START_DATE, add_email_arg, fmt_duration, fmt_int, load_dotenv, name_from_email, pct
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -299,44 +299,34 @@ def display(
 
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser()
+    add_email_arg(parser)
     parser.add_argument(
         "--input",
         default=None,
-        help="Stripped JIRA CSV (default: data/{author}_jira_stripped.csv)",
-    )
-    parser.add_argument(
-        "--author",
-        default=None,
-        help="GitHub login (used to derive default input path)",
+        help="JIRA CSV (default: data/{name}_jira.csv)",
     )
     parser.add_argument(
         "--sprint-totals",
         default=None,
-        help="Sprint totals JSON (default: data/{author}_sprint_totals.json)",
+        help="Sprint totals JSON (default: data/{name}_sprint_totals.json)",
     )
     parser.add_argument(
         "--since",
-        default=None,
+        default=START_DATE,
         help="Only include tickets resolved on/after this date (YYYY-MM-DD). "
-        "Unresolved tickets use their Created date",
+        f"Unresolved tickets use their Created date (default: {START_DATE})",
     )
     parser.add_argument(
         "--output", default=None, help="Also write stats JSON to this path"
     )
     args = parser.parse_args()
 
-    author = args.author
+    email = args.email
+    name = name_from_email(email)
     since_dt = parse_dt(args.since) if args.since else None
-
-    if args.input:
-        input_path = Path(args.input)
-    elif author:
-        input_path = Path(f"data/{author}_jira_stripped.csv")
-    else:
-        parser.error(
-            "Pass --author <login> or --input <path> to specify which CSV to analyse."
-        )
+    input_path = Path(args.input or f"data/{name}_jira.csv")
 
     if not input_path.exists():
         parser.error(f"Input file not found: {input_path}")
@@ -354,11 +344,8 @@ def main():
     )
     jira_name = assignee_counts.most_common(1)[0][0] if assignee_counts else ""
 
-    if not author:
-        author = input_path.stem.removesuffix("_jira") or "unknown"
-
     # Load sprint totals if available
-    sprint_totals_path = Path(args.sprint_totals or f"data/{author}_sprint_totals.json")
+    sprint_totals_path = Path(args.sprint_totals or f"data/{name}_sprint_totals.json")
     sprint_totals: dict | None = None
     if sprint_totals_path.exists():
         sprint_totals = json.loads(sprint_totals_path.read_text())
@@ -366,19 +353,19 @@ def main():
         # Only print the note when using the default auto-derived path
         print(
             f"Note: {sprint_totals_path} not found — sprint contribution % unavailable. "
-            f"Run: python3 scripts/fetch_sprint_totals.py --author {author}",
+            f"Run: python3 scripts/fetch_sprint_totals.py --email {email}",
             file=sys.stderr,
         )
 
     stats = analyse_jira(rows, jira_name)
-    display(author, jira_name, stats, sprint_totals=sprint_totals)
+    display(email, jira_name, stats, sprint_totals=sprint_totals)
 
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(
             json.dumps(
-                {"author": author, "jira_name": jira_name, "jira": stats}, indent=2
+                {"email": email, "jira_name": jira_name, "jira": stats}, indent=2
             )
         )
         print(f"Stats written to: {args.output}")

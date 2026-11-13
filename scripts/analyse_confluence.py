@@ -7,9 +7,9 @@ Sections:
   Created Page Versions · Pages Created · Pages Edited
 
 Usage:
-    python3 scripts/analyse_confluence.py --author <your-login>
-    python3 scripts/analyse_confluence.py --input data/<your-login>_confluence.json
-    python3 scripts/analyse_confluence.py --input data/<your-login>_confluence.json --output data/confluence_stats.json
+    python3 scripts/analyse_confluence.py
+    python3 scripts/analyse_confluence.py --email colleague@your-org.com
+    python3 scripts/analyse_confluence.py --input data/<name>_confluence.json --output data/confluence_stats.json
 """
 
 import argparse
@@ -19,7 +19,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import mean, median
 
-from utils import bar, fmt_int, pct
+from utils import START_DATE, add_email_arg, bar, fmt_int, load_dotenv, name_from_email, pct
 
 
 def space_label(key: str) -> tuple[str, str]:
@@ -208,25 +208,21 @@ def _print_page_list(heading: str, pages: list[dict], show_version: bool = False
 
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--author", default=None, help="GitHub login (used to derive default input path)")
-    parser.add_argument("--input", default=None, help="Confluence JSON (default: data/{author}_confluence.json)")
+    add_email_arg(parser)
+    parser.add_argument("--input", default=None, help="Confluence JSON (default: data/{name}_confluence.json)")
     parser.add_argument(
         "--since",
-        default=None,
-        help="Only include pages created (yours) or last modified (others') on/after this date (YYYY-MM-DD)",
+        default=START_DATE,
+        help="Only include pages created (yours) or last modified (others') on/after this date "
+        f"(YYYY-MM-DD, default: {START_DATE})",
     )
     parser.add_argument("--output", default=None, help="Also write summary stats JSON to this path")
     args = parser.parse_args()
 
-    author = args.author
-
-    if args.input:
-        input_path = Path(args.input)
-    elif author:
-        input_path = Path(f"data/{author}_confluence.json")
-    else:
-        raise SystemExit("Pass --author <login> or --input <path> to specify which JSON to analyse.")
+    email = args.email
+    input_path = Path(args.input or f"data/{name_from_email(email)}_confluence.json")
 
     if not input_path.exists():
         raise SystemExit(f"Input file not found: {input_path}")
@@ -235,10 +231,7 @@ def main():
     if args.since:
         data = filter_pages_since(data, args.since)
 
-    if not author:
-        author = input_path.stem.removesuffix("_confluence") or "unknown"
-
-    display(author, data)
+    display(email, data)
 
     if args.output:
         created = data.get("created", [])
@@ -253,7 +246,7 @@ def main():
             space_counts[label] += 1
         v_nums = [p.get("version_number") for p in created if p.get("version_number") is not None]
         stats = {
-            "author": author,
+            "email": email,
             "since": data.get("since", ""),
             "pages_created": len(created),
             "pages_edited": len(contributed),

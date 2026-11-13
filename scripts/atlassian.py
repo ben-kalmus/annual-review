@@ -10,40 +10,24 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
 _MAX_RETRIES = 5
 _RATE_LIMIT_WAIT = 60  # seconds — fallback when Retry-After header absent
 _BACKOFF_BASE = 5  # seconds — base for exponential back-off on 5xx
 
 
-def load_dotenv(dotenv_path: Path) -> None:
-    """load_dotenv copies KEY=VALUE pairs from dotenv_path into os.environ without overriding the shell."""
-    if not dotenv_path.exists():
-        return
-    for line in dotenv_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        key = key.strip()
-        val = val.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = val
-
-
-def resolve(flag_val: str | None, env_key: str, label: str) -> str:
-    """resolve returns the flag value, else the env var, else exits with a usage error."""
-    value = flag_val or os.environ.get(env_key)
+def require_env(key: str) -> str:
+    """require_env returns the environment variable key, or exits with an error when it is unset."""
+    value = os.environ.get(key)
     if not value:
-        print(f"Error: --{label.lower().replace(' ', '-')} / {env_key} is required", file=sys.stderr)
+        print(f"Error: {key} is required (set it in .env)", file=sys.stderr)
         sys.exit(1)
     return value
 
 
-def build_auth_header(email: str, token: str) -> str:
-    """build_auth_header returns the Basic auth header for an Atlassian API token."""
-    raw = f"{email}:{token}".encode("utf-8")
+def build_auth_header() -> str:
+    """build_auth_header returns the Basic auth header built from JIRA_EMAIL and JIRA_TOKEN."""
+    raw = f"{require_env('JIRA_EMAIL')}:{require_env('JIRA_TOKEN')}".encode("utf-8")
     return "Basic " + base64.b64encode(raw).decode("ascii")
 
 
