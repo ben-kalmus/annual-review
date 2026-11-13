@@ -22,13 +22,16 @@ Auth (read from the environment or .env):
 import argparse
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 
-from atlassian import build_auth_header, get_json, lookup_user, require_env
+from atlassian import build_auth_header, find_user, get_json, require_env
 from utils import START_DATE, add_email_arg, load_dotenv, name_from_email, warn_if_stale_cache
 
 
 _PAGE_LIMIT = 50
+_VERSION_WORKERS = 8  # concurrent page version lookups; send() retries on 429
 
 
 def _extract_date(page: dict) -> str:
@@ -40,35 +43,8 @@ def _extract_date(page: dict) -> str:
     return raw[:10] if raw else ""
 
 
-def get_current_user_account_id(base_url: str, auth_header: str, debug: bool = False) -> str | None:
-    """Return the account ID of the authenticated user via the Confluence API."""
-    try:
-        result = get_json(
-            f"{base_url}/wiki/rest/api/user/current",
-            auth_header,
-            {},
-            debug=debug,
-        )
-        return result.get("accountId")
-    except Exception:
-        return None
-
-
-def fetch_pages(
-    base_url: str,
-    auth_header: str,
-    cql: str,
-    stop_before: str | None = None,
-    max_results: int | None = None,
-    debug: bool = False,
-) -> list[dict]:
-    """Fetch pages matching a CQL query.
-
-    stop_before: if set (YYYY-MM-DD), stop paginating once all results in a batch
-    are older than this date. Use with ORDER BY lastModified DESC queries to avoid
-    paginating through the full history.
-    max_results: hard cap on total pages fetched (safety net for large result sets).
-    """
+def fetch_pages(base_url: str, auth_header: str, cql: str, debug: bool = False) -> list[dict]:
+    """fetch_pages returns every page matching cql, without duplicates."""
     url = f"{base_url}/wiki/rest/api/content/search"
     pages: list[dict] = []
     start = 0
@@ -106,17 +82,6 @@ def fetch_pages(
         if fetched < _PAGE_LIMIT or not data.get("_links", {}).get("next"):
             break
 
-        if max_results and len(pages) >= max_results:
-            break
-        # Early exit: results are ordered DESC by lastModified, so once the oldest
-        # result in this batch predates our cutoff, all subsequent pages will too.
-        if stop_before and results:
-            oldest_in_batch = (
-                results[-1].get("version", {}).get("when") or ""
-            )[:10]
-            if oldest_in_batch and oldest_in_batch < stop_before:
-                break
-
     # Deduplicate by page ID (Confluence search can return the same page
     # multiple times across paginated results).
     seen: set[str] = set()
@@ -127,6 +92,26 @@ def fetch_pages(
             seen.add(pid)
             unique.append(p)
     return unique
+
+
+def find_last_edit(page: dict, base_url: str, auth_header: str, account_id: str, since: str, debug: bool = False) -> str | None:
+    """find_last_edit returns the date of the account's latest version of page on or after since, or None when it has none."""
+    if page["_version_author_id"] == account_id:
+        return page["last_modified"]
+    url = f"{base_url}/wiki/api/v2/pages/{page['id']}/versions"
+    params = {"limit": _PAGE_LIMIT, "sort": "-modified-date"}
+    while url:
+        data = get_json(url, auth_header, params, debug=debug)
+        for version in data["results"]:
+            date = version["createdAt"][:10]
+            if date < since:
+                return None
+            if version["authorId"] == account_id:
+                return date
+        next_link = data["_links"].get("next")
+        url = f"{base_url}{next_link}" if next_link else None
+        params = {}
+    return None
 
 
 def main():
@@ -142,10 +127,12 @@ def main():
     args = parser.parse_args()
 
     output_path = Path(args.output or f"data/{name_from_email(args.email)}_confluence.json")
+    cache = json.loads(output_path.read_text()) if output_path.exists() else None
 
-    if output_path.exists() and not args.force:
+    # NOTE: caches written before edit dates were recorded are fetched again, as if --force was passed.
+    if cache and not args.force and all("edited" in p for p in cache["contributed"]):
         print(f"Cache hit: {output_path} already exists. Pass --force to re-fetch.")
-        warn_if_stale_cache(output_path, json.loads(output_path.read_text()).get("since"), args.since)
+        warn_if_stale_cache(output_path, cache.get("since"), args.since)
         sys.exit(0)
 
     base_url = require_env("JIRA_URL").rstrip("/")
@@ -153,54 +140,27 @@ def main():
     since = args.since
     target_email = args.email
 
-    account_id: str | None = None
-    if target_email != require_env("JIRA_EMAIL"):
-        # Querying for a colleague — resolve their account ID for CQL
-        print(f"Looking up account ID for: {target_email}...", end=" ", flush=True)
-        account_id = (lookup_user(base_url, auth_header, target_email, debug=args.debug) or {}).get("accountId")
-        if account_id:
-            user_cql = f'"{account_id}"'
-            print(f"found ({account_id})")
-        else:
-            user_cql = f'"{target_email}"'
-            print("not found — falling back to email in CQL")
-    else:
-        # Querying for yourself — currentUser() is reliable and avoids account ID lookup
-        user_cql = "currentUser()"
-        account_id = get_current_user_account_id(base_url, auth_header, debug=args.debug)
+    user = find_user(base_url, auth_header, target_email, debug=args.debug)
+    if not user:
+        print(f"Error: no Atlassian user found for {target_email}", file=sys.stderr)
+        sys.exit(1)
+    account_id = user["accountId"]
 
     print(f"Fetching Confluence pages for: {target_email}  (since {since})")
 
     print("  Fetching created pages...", end=" ", flush=True)
-    created_cql = f'creator = {user_cql} AND type = page AND created >= "{since}"'
+    created_cql = f'creator = "{account_id}" AND type = page AND created >= "{since}"'
     created = fetch_pages(base_url, auth_header, created_cql, debug=args.debug)
     print(f"{len(created)} found")
 
-    # Fetch pages the user contributed to but did not create.
-    # ORDER BY lastModified DESC + stop_before lets us bail out as soon as we
-    # reach pages that predate the review window, avoiding pagination through
-    # thousands of old edits. We then post-filter to pages where the user was
-    # the last editor (version.by.accountId == account_id) — the only reliable
-    # per-contribution signal available without fetching per-page version history.
+    # A page the person edited on or after since was last modified on or after since, so the date filter loses none.
     print("  Fetching contributed pages (edits to others' pages)...", end=" ", flush=True)
-    # No lastModified date filter in CQL — stop_before handles the cutoff by
-    # breaking pagination once a batch goes older than `since`. Adding the date
-    # filter here would make stop_before unreachable (all results would already
-    # satisfy it) and we'd paginate the full history.
-    contributed_cql = (
-        f'contributor = {user_cql} AND type = page '
-        f'AND creator != {user_cql} '
-        f'ORDER BY lastModified DESC'
-    )
-    # Cap at 1 000 scanned pages — enough for any realistic contributor.
-    # stop_before provides an earlier exit for typical cases; max_results is a
-    # safety net for highly active contributors whose recent-page count is large.
-    contributed = fetch_pages(
-        base_url, auth_header, contributed_cql,
-        stop_before=since, max_results=1000, debug=args.debug,
-    )
-    if account_id:
-        contributed = [p for p in contributed if p.get("_version_author_id") == account_id]
+    contributed_cql = f'contributor = "{account_id}" AND type = page AND creator != "{account_id}" AND lastmodified >= "{since}"'
+    candidates = fetch_pages(base_url, auth_header, contributed_cql, debug=args.debug)
+    find_edit = partial(find_last_edit, base_url=base_url, auth_header=auth_header, account_id=account_id, since=since, debug=args.debug)
+    with ThreadPoolExecutor(max_workers=_VERSION_WORKERS) as pool:
+        edits = list(pool.map(find_edit, candidates))
+    contributed = [{**p, "edited": edited} for p, edited in zip(candidates, edits) if edited]
     print(f"{len(contributed)} found")
 
     # Strip internal field before writing output

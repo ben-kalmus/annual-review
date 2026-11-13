@@ -344,9 +344,7 @@ def section_confluence(confluence_path: Path, since: str) -> str:
         if m:
             monthly[m]["created"] += 1
     for p in contributed:
-        m = (p.get("last_modified") or p.get("created", ""))[:7]
-        if m:
-            monthly[m]["edited"] += 1
+        monthly[p["edited"][:7]]["edited"] += 1
 
     if monthly:
         out.append(h(3, "Activity Timeline"))
@@ -390,11 +388,11 @@ def section_confluence(confluence_path: Path, since: str) -> str:
             [
                 p.get("space", "")[:8],
                 p.get("title", ""),
-                (p.get("last_modified") or p.get("created", ""))[:10],
+                p["edited"],
             ]
-            for p in sorted(contributed, key=lambda x: x.get("last_modified") or x.get("created", ""), reverse=True)
+            for p in sorted(contributed, key=lambda x: x["edited"], reverse=True)
         ]
-        out.append(table(["Space", "Title", "Last modified"], edited_rows))
+        out.append(table(["Space", "Title", "Your last edit"], edited_rows))
 
     return "\n".join(out)
 

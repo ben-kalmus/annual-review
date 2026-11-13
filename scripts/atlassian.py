@@ -112,8 +112,11 @@ def read_error_body(exc: urllib.error.HTTPError) -> str:
         return "(could not read response body)"
 
 
-def lookup_user(base_url: str, auth_header: str, email: str, debug: bool = False) -> dict | None:
-    """lookup_user returns the Atlassian user for email, or None when no user matches."""
+def find_user(base_url: str, auth_header: str, email: str, debug: bool = False) -> dict | None:
+    """find_user returns the Atlassian user for email, or None when no user matches."""
+    if email == require_env("JIRA_EMAIL"):
+        # NOTE: user search can hide the caller's own email address, so it could return someone else.
+        return get_json(f"{base_url}/rest/api/2/myself", auth_header, {}, debug=debug)
     try:
         results = get_json(f"{base_url}/rest/api/3/user/search", auth_header, {"query": email}, debug=debug)
     except Exception:

@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-from atlassian import build_auth_header, get_json, lookup_user, require_env, search_issues
+from atlassian import build_auth_header, find_user, get_json, require_env, search_issues
 from utils import START_DATE, add_email_arg, load_dotenv, name_from_email, warn_if_stale_cache
 
 BASE_FIELDS = [
@@ -43,14 +43,6 @@ BASE_FIELDS = [
     "parent",
     "description",
 ]
-
-
-def find_user(base_url: str, auth_header: str, email: str, debug: bool = False) -> dict | None:
-    """find_user returns the JIRA user for email, or None when no user matches."""
-    if email == require_env("JIRA_EMAIL"):
-        # NOTE: user search can hide the caller's own email address, so it could return someone else.
-        return get_json(f"{base_url}/rest/api/2/myself", auth_header, {}, debug=debug)
-    return lookup_user(base_url, auth_header, email, debug=debug)
 
 
 def find_field_ids(base_url: str, auth_header: str, debug: bool = False) -> tuple[str | None, str | None]:

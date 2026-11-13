@@ -45,16 +45,14 @@ def ym(date_str: str) -> str:
 
 
 def filter_pages_since(data: dict, since: str) -> dict:
-    """filter_pages_since returns data with created pages created on or after since and edited pages modified on or after it."""
+    """filter_pages_since returns data with created pages created on or after since and edited pages the person edited on or after it."""
+    if any("edited" not in p for p in data.get("contributed", [])):
+        raise SystemExit("Confluence cache has no edit dates. Re-fetch it: python3 scripts/fetch_confluence.py --force")
     return {
         **data,
         "since": since,
         "created": [p for p in data.get("created", []) if p.get("created", "")[:10] >= since],
-        "contributed": [
-            p
-            for p in data.get("contributed", [])
-            if (p.get("last_modified") or p.get("created", ""))[:10] >= since
-        ],
+        "contributed": [p for p in data.get("contributed", []) if p["edited"] >= since],
     }
 
 
@@ -117,7 +115,7 @@ def display(author: str, data: dict) -> None:
         if m:
             monthly[m]["created"] += 1
     for p in contributed:
-        m = ym(p.get("last_modified", "") or p.get("created", ""))
+        m = ym(p["edited"])
         if m:
             monthly[m]["edited"] += 1
 
@@ -182,7 +180,7 @@ def _print_page_list(heading: str, pages: list[dict], show_version: bool = False
         print(f"  {'space':<8}  {'title':<60}  {'date'}")
         print(f"  {'─' * 8}  {'─' * 60}  {'─' * 10}")
 
-    sort_field = "created" if show_version else "last_modified"
+    sort_field = "created" if show_version else "edited"
     sorted_pages = sorted(pages, key=lambda x: x.get(sort_field) or "", reverse=True)
     for p in sorted_pages[:_PAGE_LIST_LIMIT]:
         space = (p.get("space") or "")[:8]
@@ -195,10 +193,9 @@ def _print_page_list(heading: str, pages: list[dict], show_version: bool = False
                 title = title[:55] + "..."
             print(f"  {space:<8}  {v!s:>3}  {title:<58}  {date}")
         else:
-            last_mod = (p.get("last_modified") or date)[:10]
             if len(title) > 60:
                 title = title[:57] + "..."
-            print(f"  {space:<8}  {title:<60}  {last_mod}")
+            print(f"  {space:<8}  {title:<60}  {p['edited']}")
 
     if n > _PAGE_LIST_LIMIT:
         print(f"  … and {n - _PAGE_LIST_LIMIT} more")
@@ -215,7 +212,7 @@ def main():
     parser.add_argument(
         "--since",
         default=START_DATE,
-        help="Only include pages created (yours) or last modified (others') on/after this date "
+        help="Only include pages created (yours) or edited by you (others') on/after this date "
         f"(YYYY-MM-DD, default: {START_DATE})",
     )
     parser.add_argument("--output", default=None, help="Also write summary stats JSON to this path")
