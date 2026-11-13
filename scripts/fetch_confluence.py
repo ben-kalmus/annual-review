@@ -20,99 +20,16 @@ Auth (all three required — flag overrides env var):
 """
 
 import argparse
-import base64
 import json
-import os
 import sys
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from pathlib import Path
 
+from atlassian import build_auth_header, get_json, load_dotenv, lookup_account_id, resolve
 from utils import warn_if_stale_cache
 
 
 _DEFAULT_SINCE = "2025-05-28"
-_MAX_RETRIES = 5
-_RATE_LIMIT_WAIT = 60
-_BACKOFF_BASE = 5
 _PAGE_LIMIT = 50
-
-
-def load_dotenv(dotenv_path: Path) -> None:
-    if not dotenv_path.exists():
-        return
-    for line in dotenv_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        key = key.strip()
-        val = val.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = val
-
-
-def build_auth_header(email: str, token: str) -> str:
-    raw = f"{email}:{token}".encode("utf-8")
-    return "Basic " + base64.b64encode(raw).decode("ascii")
-
-
-def _read_error_body(exc: urllib.error.HTTPError) -> str:
-    try:
-        return exc.read().decode("utf-8", errors="replace")
-    except Exception:
-        return "(could not read response body)"
-
-
-def confluence_get(url: str, auth_header: str, params: dict, debug: bool = False) -> dict:
-    full_url = f"{url}?{urllib.parse.urlencode(params)}" if params else url
-    if debug:
-        print(f"\n  GET {full_url}", file=sys.stderr)
-    req = urllib.request.Request(
-        full_url,
-        headers={"Authorization": auth_header, "Accept": "application/json"},
-    )
-
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-
-        except urllib.error.HTTPError as exc:
-            body = _read_error_body(exc)
-            print(f"\n  HTTP {exc.code} from {url}", file=sys.stderr)
-            print(f"  Response: {body[:500]}", file=sys.stderr)
-
-            if exc.code == 401:
-                raise RuntimeError("Authentication failed — check JIRA_EMAIL and JIRA_TOKEN") from exc
-            if exc.code == 403:
-                raise RuntimeError("Forbidden — token may lack read permissions on Confluence") from exc
-            if exc.code == 429:
-                wait = int(exc.headers.get("Retry-After", _RATE_LIMIT_WAIT))
-                print(f"  Rate limit hit — waiting {wait}s...", file=sys.stderr)
-                time.sleep(wait)
-            else:
-                wait = _BACKOFF_BASE * (2 ** attempt)
-                print(f"  Retrying in {wait}s (attempt {attempt}/{_MAX_RETRIES})...", file=sys.stderr)
-                if attempt == _MAX_RETRIES:
-                    raise RuntimeError(
-                        f"Confluence API error after {_MAX_RETRIES} retries: HTTP {exc.code}\n"
-                        f"  URL: {full_url}\n  Detail: {body[:500]}"
-                    ) from exc
-                time.sleep(wait)
-
-        except urllib.error.URLError as exc:
-            wait = _BACKOFF_BASE * (2 ** attempt)
-            print(f"\n  Network error ({exc.reason}) — retrying in {wait}s...", file=sys.stderr)
-            if attempt == _MAX_RETRIES:
-                raise RuntimeError(f"Network error after {_MAX_RETRIES} retries: {exc.reason}") from exc
-            time.sleep(wait)
-
-    return {}
 
 
 def _extract_date(page: dict) -> str:
@@ -124,30 +41,10 @@ def _extract_date(page: dict) -> str:
     return raw[:10] if raw else ""
 
 
-def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool = False) -> str | None:
-    """Look up an Atlassian account ID by email. Returns None if not found."""
-    try:
-        results = confluence_get(
-            f"{base_url}/rest/api/3/user/search",
-            auth_header,
-            {"query": email},
-            debug=debug,
-        )
-        if isinstance(results, list):
-            for user in results:
-                if user.get("emailAddress", "").lower() == email.lower():
-                    return user.get("accountId")
-            if results:
-                return results[0].get("accountId")
-    except Exception:
-        pass
-    return None
-
-
 def get_current_user_account_id(base_url: str, auth_header: str, debug: bool = False) -> str | None:
     """Return the account ID of the authenticated user via the Confluence API."""
     try:
-        result = confluence_get(
+        result = get_json(
             f"{base_url}/wiki/rest/api/user/current",
             auth_header,
             {},
@@ -184,7 +81,7 @@ def fetch_pages(
             "start": start,
             "expand": "space,history.createdDate,version",
         }
-        data = confluence_get(url, auth_header, params, debug=debug)
+        data = get_json(url, auth_header, params, debug=debug)
         results = data.get("results", [])
 
         for r in results:
@@ -231,14 +128,6 @@ def fetch_pages(
             seen.add(pid)
             unique.append(p)
     return unique
-
-
-def resolve(flag_val: str | None, env_key: str, label: str) -> str:
-    value = flag_val or os.environ.get(env_key)
-    if not value:
-        print(f"Error: --{label.lower().replace(' ', '-')} / {env_key} is required", file=sys.stderr)
-        sys.exit(1)
-    return value
 
 
 def main():
