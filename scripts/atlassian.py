@@ -112,8 +112,8 @@ def read_error_body(exc: urllib.error.HTTPError) -> str:
         return "(could not read response body)"
 
 
-def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool = False) -> str | None:
-    """lookup_account_id returns the Atlassian account ID for email, or None when no user matches."""
+def lookup_user(base_url: str, auth_header: str, email: str, debug: bool = False) -> dict | None:
+    """lookup_user returns the Atlassian user for email, or None when no user matches."""
     try:
         results = get_json(f"{base_url}/rest/api/3/user/search", auth_header, {"query": email}, debug=debug)
     except Exception:
@@ -122,8 +122,8 @@ def lookup_account_id(base_url: str, auth_header: str, email: str, debug: bool =
         return None
     for user in results:
         if user.get("emailAddress", "").lower() == email.lower():
-            return user.get("accountId")
-    return results[0].get("accountId") if results else None
+            return user
+    return results[0] if results else None
 
 
 def search_issues(base_url: str, auth_header: str, jql: str, fields: list[str], debug: bool = False) -> list[dict]:
@@ -131,7 +131,7 @@ def search_issues(base_url: str, auth_header: str, jql: str, fields: list[str], 
     issues: list[dict] = []
     body: dict = {"jql": jql, "fields": fields, "maxResults": 100}
     while True:
-        # NOTE: API v2 returns descriptions as wiki-markup strings, the same text the CSV export held; v3 returns ADF documents.
+        # NOTE: API v2 returns descriptions as wiki-markup strings; v3 returns ADF documents.
         data = post_json(f"{base_url}/rest/api/2/search/jql", auth_header, body, debug=debug)
         issues.extend(data.get("issues", []))
         if not data.get("nextPageToken"):

@@ -10,6 +10,7 @@ import json
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 BATCH_SIZE = 50  # safe page size that avoids GraphQL 502s on large repos
 
@@ -82,6 +83,17 @@ def gh(*args: str) -> dict:
 def current_user() -> str:
     """Return the login of the currently authenticated GitHub user."""
     return gh("api", "user")["login"]
+
+
+def read_cache_since(path: Path) -> str | None:
+    """read_cache_since returns the --since date recorded for the cache at path, or None when none was recorded."""
+    marker = path.with_suffix(".since")
+    return marker.read_text().strip() if marker.exists() else None
+
+
+def write_cache_since(path: Path, since: str) -> None:
+    """write_cache_since records since as the start date of the cache at path."""
+    path.with_suffix(".since").write_text(since)
 
 
 def discover_repos(query: str, since: str, org: str | None = None, date_field: str = "created") -> list[str]:

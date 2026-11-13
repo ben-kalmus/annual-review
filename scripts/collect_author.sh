@@ -19,7 +19,7 @@
 # --org                   GitHub org to limit PR discovery to (e.g. my-company).
 #                         Omit to include all orgs the user has activity in.
 # --jira                  Fetch resolved JIRA tickets and sprint totals from the JIRA API.
-#                         Output: data/<name>_jira.csv, data/<name>_sprint_totals.json
+#                         Output: data/<name>_jira.json, data/<name>_sprint_totals.json
 # --confluence            Fetch Confluence contributions (requires .env creds).
 #                         Output: data/<name>_confluence.json
 # --export-md             Generate data/<author>_review.md after all steps succeed.
@@ -163,7 +163,7 @@ if [[ "$RUN_GIT" == true ]]; then
     echo "    ${AUTHOR}_reviewed_prs.json"
 fi
 if [[ "$RUN_JIRA" == true ]]; then
-    echo "    ${NAME}_jira.csv"
+    echo "    ${NAME}_jira.json"
     [[ -f "data/${NAME}_sprint_totals.json" ]] && echo "    ${NAME}_sprint_totals.json"
 fi
 [[ -f "data/${NAME}_confluence.json" ]] && echo "    ${NAME}_confluence.json"

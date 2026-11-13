@@ -2,7 +2,7 @@
 """
 Fetch total team ticket counts and story points per sprint from the JIRA REST API.
 
-Reads the person's JIRA CSV to discover which sprints they worked in,
+Reads the person's JIRA tickets from fetch_jira.py to discover which sprints they worked in,
 then queries JIRA for the full team's resolved tickets in each of those sprints.
 Output is cached to avoid hitting the API on every analysis run.
 
@@ -24,7 +24,6 @@ Auth (read from the environment or .env):
 """
 
 import argparse
-import csv
 import json
 import sys
 from collections import Counter
@@ -40,37 +39,21 @@ _DEFAULT_SP_FIELD = "customfield_10016"
 _SP_FIELD_NAMES = {"story points", "story point estimate", "story points estimate"}
 
 
-# ── CSV helpers ───────────────────────────────────────────────────────────────
+# ── ticket helpers ────────────────────────────────────────────────────────────
 
 
-def infer_project(csv_path: Path) -> str:
-    """Return the most common Project key in the CSV."""
-    with csv_path.open(newline="", encoding="utf-8") as fh:
-        rows = list(csv.DictReader(fh))
-    counts = Counter(
-        r.get("Project key", "").strip()
-        for r in rows
-        if r.get("Project key", "").strip()
-    )
+def infer_project(tickets: list[dict]) -> str:
+    """Return the most common Project key among tickets."""
+    counts = Counter(t["Project key"] for t in tickets if t["Project key"])
     if not counts:
-        print(f"Error: no 'Project key' values found in {csv_path}", file=sys.stderr)
+        print("Error: no tickets with a Project key", file=sys.stderr)
         sys.exit(1)
     return counts.most_common(1)[0][0]
 
 
-def sprints_from_csv(csv_path: Path, project: str) -> list[str]:
-    """Return sorted unique sprint names from rows belonging to `project`."""
-    with csv_path.open(newline="", encoding="utf-8") as fh:
-        rows = list(csv.DictReader(fh))
-    sprints: set[str] = set()
-    for r in rows:
-        if r.get("Project key", "").strip() != project:
-            continue
-        for col in ("Sprint", "Sprint_2", "Sprint_3"):
-            val = r.get(col, "").strip()
-            if val:
-                sprints.add(val)
-    return sorted(sprints)
+def sprints_for_project(tickets: list[dict], project: str) -> list[str]:
+    """Return sorted unique sprint names from tickets belonging to `project`."""
+    return sorted({s for t in tickets if t["Project key"] == project for s in t["Sprints"]})
 
 
 # ── story-point field discovery ───────────────────────────────────────────────
@@ -183,7 +166,7 @@ def main():
     parser = argparse.ArgumentParser()
     add_email_arg(parser)
     parser.add_argument(
-        "--project", default=None, help="Project key (default: inferred from CSV)"
+        "--project", default=None, help="Project key (default: the most common project in the tickets)"
     )
     parser.add_argument(
         "--sp-field",
@@ -193,7 +176,7 @@ def main():
     parser.add_argument(
         "--input",
         default=None,
-        help="JIRA CSV (default: data/{name}_jira.csv)",
+        help="JIRA tickets JSON from fetch_jira.py (default: data/{name}_jira.json)",
     )
     parser.add_argument(
         "--output",
@@ -211,11 +194,11 @@ def main():
     args = parser.parse_args()
 
     name = name_from_email(args.email)
-    input_path = Path(args.input or f"data/{name}_jira.csv")
+    input_path = Path(args.input or f"data/{name}_jira.json")
     output_path = Path(args.output or f"data/{name}_sprint_totals.json")
 
     if not input_path.exists():
-        print(f"Error: input file not found: {input_path}", file=sys.stderr)
+        print(f"Error: {input_path} not found. Run: python3 scripts/fetch_jira.py --email {args.email}", file=sys.stderr)
         sys.exit(1)
 
     # Cache check
@@ -227,8 +210,9 @@ def main():
     auth_header = build_auth_header()
 
     # Project and sprints
-    project = args.project or infer_project(input_path)
-    sprints = sprints_from_csv(input_path, project)
+    tickets = json.loads(input_path.read_text())["tickets"]
+    project = args.project or infer_project(tickets)
+    sprints = sprints_for_project(tickets, project)
 
     if not sprints:
         print(

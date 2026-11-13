@@ -111,7 +111,7 @@ Every script uses the same flags: the GitHub scripts take `--author`, the JIRA a
 | Confluence pages you created | page `created` |
 | Confluence pages you edited | page `last_modified` |
 
-Filtering cached data cannot add activity that the fetch skipped. When a cached file starts later than `--since`, the fetch script prints a warning and keeps the cache (pass `--force` to re-fetch). The fetch scripts record their start date in `data/<login>_prs.since`, `data/<login>_reviewed_prs.since` and `data/<name>_jira.since` (Confluence stores it inside the JSON). Caches fetched before these files existed warn with an unknown date.
+Filtering cached data cannot add activity that the fetch skipped. When a cached file starts later than `--since`, the fetch script prints a warning and keeps the cache (pass `--force` to re-fetch). The PR fetch scripts record their start date in `data/<login>_prs.since` and `data/<login>_reviewed_prs.since`. The JIRA and Confluence JSON files store it in a `since` field. PR caches fetched before the `.since` files existed warn with an unknown date.
 
 `fetch_reviewed_prs.py` searches for PRs updated on or after `--since`, so it finds PRs opened earlier that you reviewed later. It keeps only your reviews submitted on or after `--since`. Reviewed-PR caches fetched before this change searched by PR creation date and miss those PRs, so re-fetch them with `--force`.
 
@@ -119,13 +119,13 @@ Output files are written to `data/` (gitignored). GitHub files use the GitHub lo
 ```
 data/<login>_prs.json
 data/<login>_reviewed_prs.json
-data/<name>_jira.csv                (--jira)
+data/<name>_jira.json               (--jira)
 data/<name>_sprint_totals.json      (--jira, with .env credentials)
 data/<name>_confluence.json         (--confluence)
 data/<login>_review.md              (--export-md)
 ```
 
-Caches from before this naming used `data/<login>_jira_stripped.csv`, `data/<login>_sprint_totals.json` and `data/<login>_confluence.json`. Rename them to the `<name>` prefix, or re-fetch with `--force`.
+Caches from before this naming used `data/<login>_sprint_totals.json` and `data/<login>_confluence.json`. Rename them to the `<name>` prefix, or re-fetch with `--force`. The JIRA CSV export is no longer read. Run `fetch_jira.py` to create `data/<name>_jira.json`.
 
 ---
 
@@ -151,7 +151,7 @@ review period. Fetched data is cached in `data/`; re-running analysis is instant
 
 ## JIRA Analysis
 
-`fetch_jira.py` fetches tickets with status Done, resolved on or after `--since`, where the person is the assignee or the reporter. It skips the `Admin Access` and `Access Request` issue types, and writes `data/<name>_jira.csv`. Your own email queries `currentUser()`. Another email is resolved to an account ID first.
+`fetch_jira.py` fetches tickets with status Done, resolved on or after `--since`, where the person is the assignee or the reporter. It skips the `Admin Access` and `Access Request` issue types, and writes `data/<name>_jira.json`. The file records the person's JIRA display name and account ID, and keeps every label and every sprint of each ticket. `analyse_jira.py` counts a ticket as yours when its assignee or reporter account ID matches.
 
 ```bash
 python3 scripts/fetch_jira.py --since 2025-01-01
@@ -159,9 +159,9 @@ python3 scripts/fetch_sprint_totals.py
 python3 scripts/analyse_jira.py
 ```
 
-`fetch_sprint_totals.py` fetches team ticket and story point totals for each sprint in the CSV, so you can see your share of each sprint's completed work. It discovers the story points field from your JIRA instance.
+`fetch_sprint_totals.py` fetches team ticket and story point totals for each sprint in your tickets, so you can see your share of each sprint's completed work. It discovers the story points field from your JIRA instance.
 
-The CSV keeps the first two labels and the first three sprints of each ticket. Both files are cached in `data/`. Pass `--force` to re-fetch.
+Both files are cached in `data/`. Pass `--force` to re-fetch.
 
 ---
 

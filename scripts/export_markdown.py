@@ -13,7 +13,6 @@ Usage:
 """
 
 import argparse
-import csv
 import json
 import sys
 from collections import Counter, defaultdict
@@ -159,21 +158,16 @@ def section_jira(jira_path: Path, sprint_totals_path: Path, since: str) -> str:
     if not jira_path.exists():
         return ""
 
-    with jira_path.open(newline="", encoding="utf-8") as fh:
-        rows = list(csv.DictReader(fh))
+    jira = json.loads(jira_path.read_text())
+    rows = jira["tickets"]
     if since:
         rows = filter_tickets_since(rows, parse_since(since))
-
-    assignee_counts: Counter = Counter(
-        r.get("Assignee", "").strip() for r in rows if r.get("Assignee", "").strip()
-    )
-    jira_name = assignee_counts.most_common(1)[0][0] if assignee_counts else ""
 
     sprint_totals: dict | None = None
     if sprint_totals_path and sprint_totals_path.exists():
         sprint_totals = json.loads(sprint_totals_path.read_text())
 
-    stats = _analyse_jira(rows, jira_name)
+    stats = _analyse_jira(rows, jira["account_id"])
     t  = stats["totals"]
     sp = stats["story_points"]
     ct = stats["cycle_time_days"]
@@ -447,7 +441,7 @@ def main():
 
     # JIRA
     jira_section = section_jira(
-        jira_path          = data_dir / f"{name}_jira.csv",
+        jira_path          = data_dir / f"{name}_jira.json",
         sprint_totals_path = data_dir / f"{name}_sprint_totals.json",
         since              = since,
     )
@@ -455,7 +449,7 @@ def main():
         sections.append(hr())
         sections.append(jira_section)
     else:
-        print(f"Note: {data_dir}/{name}_jira.csv not found — skipping JIRA section.")
+        print(f"Note: {data_dir}/{name}_jira.json not found — skipping JIRA section.")
 
     # Confluence
     conf_section = section_confluence(

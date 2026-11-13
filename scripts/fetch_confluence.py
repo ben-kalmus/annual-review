@@ -24,7 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-from atlassian import build_auth_header, get_json, lookup_account_id, require_env
+from atlassian import build_auth_header, get_json, lookup_user, require_env
 from utils import START_DATE, add_email_arg, load_dotenv, name_from_email, warn_if_stale_cache
 
 
@@ -157,7 +157,7 @@ def main():
     if target_email != require_env("JIRA_EMAIL"):
         # Querying for a colleague — resolve their account ID for CQL
         print(f"Looking up account ID for: {target_email}...", end=" ", flush=True)
-        account_id = lookup_account_id(base_url, auth_header, target_email, debug=args.debug)
+        account_id = (lookup_user(base_url, auth_header, target_email, debug=args.debug) or {}).get("accountId")
         if account_id:
             user_cql = f'"{account_id}"'
             print(f"found ({account_id})")
