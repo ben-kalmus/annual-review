@@ -69,6 +69,8 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 
 ## Quick Start
 
+Run every command from the repo root. The scripts read and write `data/` relative to the current directory.
+
 ```bash
 # GitHub PRs only
 ./scripts/collect_author.sh --git --org my-company --since 2025-01-01
@@ -101,7 +103,7 @@ Every script uses the same flags: the GitHub scripts take `--author`, the JIRA a
 
 ### Filtering by date (`--since`)
 
-`--since` limits both the fetch and the analysis. The analyse scripts and `export_markdown.py` also accept `--since`, so you can narrow cached data without re-fetching.
+`--since` limits both the fetch and the analysis. The analyse scripts and `export_markdown.py` also accept `--since`, so you can narrow cached data without re-fetching. When you run the scripts one by one, use the same `--since` for every command, because a command without it falls back to `START_DATE`.
 
 | Source | Date field compared to `--since` |
 |---|---|
@@ -141,7 +143,7 @@ Caches from before this naming used `data/<login>_sprint_totals.json` and `data/
 ```bash
 python3 scripts/fetch_prs.py --author <login> --org my-company --since 2025-01-01
 python3 scripts/fetch_reviewed_prs.py --author <login> --org my-company --since 2025-01-01
-python3 scripts/analyse_prs.py --author <login>
+python3 scripts/analyse_prs.py --author <login> --since 2025-01-01
 ```
 
 The default `--since` date is `START_DATE` in `scripts/utils.py` — update it for your
@@ -156,7 +158,7 @@ review period. Fetched data is cached in `data/`; re-running analysis is instant
 ```bash
 python3 scripts/fetch_jira.py --since 2025-01-01
 python3 scripts/fetch_sprint_totals.py
-python3 scripts/analyse_jira.py
+python3 scripts/analyse_jira.py --since 2025-01-01
 ```
 
 `fetch_sprint_totals.py` fetches team ticket and story point totals for each sprint in your tickets, so you can see your share of each sprint's completed work. It discovers the story points field from your JIRA instance.
@@ -175,7 +177,7 @@ Requires the same `.env` credentials used for JIRA.
 
 ```bash
 python3 scripts/fetch_confluence.py --since 2025-01-01
-python3 scripts/analyse_confluence.py
+python3 scripts/analyse_confluence.py --since 2025-01-01
 ```
 
 Data is cached in `data/<name>_confluence.json`. Pass `--force` to re-fetch.
@@ -212,7 +214,9 @@ You can use **your own API token** — no need to share credentials.
 ./scripts/collect_author.sh \
   --author their-github-login \
   --email their-atlassian@your-org.com \
+  --org my-company \
   --since 2025-01-01 \
+  --git \
   --jira \
   --confluence \
   --export-md
