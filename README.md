@@ -112,6 +112,8 @@ Get an API token at: **Atlassian account settings → Security → API tokens**
 
 Filtering cached data cannot add activity that the fetch skipped. When a cached file starts later than `--since`, the fetch script prints a warning and keeps the cache (pass `--force` to re-fetch). PR caches record their start date in `data/<login>_prs.since` and `data/<login>_reviewed_prs.since`. Caches fetched before this file existed warn with an unknown date. The JIRA CSV has no recorded start date, so set the JQL `resolutiondate` to a date on or before `--since`.
 
+`fetch_reviewed_prs.py` searches for PRs updated on or after `--since`, so it finds PRs opened earlier that you reviewed later. It keeps only your reviews submitted on or after `--since`. Reviewed-PR caches fetched before this change searched by PR creation date and miss those PRs, so re-fetch them with `--force`.
+
 Output files are written to `data/` (gitignored):
 ```
 data/<login>_prs.json

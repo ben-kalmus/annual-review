@@ -97,9 +97,9 @@ def write_cache_since(path: Path, since: str) -> None:
     path.with_suffix(".since").write_text(since)
 
 
-def discover_repos(query: str, since: str, org: str | None = None) -> list[str]:
+def discover_repos(query: str, since: str, org: str | None = None, date_field: str = "created") -> list[str]:
     """
-    Discover all repos containing PRs matching `query` since `since`.
+    Discover all repos containing PRs matching `query` whose `date_field` is on or after `since`.
     If `org` is given, only repos belonging to that GitHub organisation are
     returned. If omitted, all repos (including personal and cross-org) are
     included.
@@ -109,7 +109,7 @@ def discover_repos(query: str, since: str, org: str | None = None) -> list[str]:
     """
     repos: set[str] = set()
     page = 1
-    full_query = f"{query}+type:pr+created:>={since}"
+    full_query = f"{query}+type:pr+{date_field}:>={since}"
     while True:
         data = gh("api", f"search/issues?q={full_query}&per_page=100&page={page}")
         items = data.get("items", []) if isinstance(data, dict) else []
@@ -125,15 +125,15 @@ def discover_repos(query: str, since: str, org: str | None = None) -> list[str]:
     return sorted(repos)
 
 
-def search_pr_numbers(query: str, since: str) -> list[tuple[str, int]]:
+def search_pr_numbers(query: str, since: str, date_field: str = "created") -> list[tuple[str, int]]:
     """
-    Search GitHub for PRs matching `query` created on or after `since`.
+    Search GitHub for PRs matching `query` whose `date_field` is on or after `since`.
     Returns a list of (owner/repo, pr_number) tuples.
     Handles pagination automatically.
     """
     results = []
     page = 1
-    full_query = f"{query}+type:pr+created:>={since}"
+    full_query = f"{query}+type:pr+{date_field}:>={since}"
     while True:
         data = gh("api", f"search/issues?q={full_query}&per_page=100&page={page}")
         items = data.get("items", []) if isinstance(data, dict) else []

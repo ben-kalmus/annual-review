@@ -21,6 +21,7 @@ import argparse
 import json
 from pathlib import Path
 
+from analyse_prs import filter_reviewed_since, parse_since
 from pr_utils import START_DATE, current_user, discover_repos, fetch_prs_for_numbers, read_cache_since, search_pr_numbers, write_cache_since
 from utils import warn_if_stale_cache
 
@@ -45,7 +46,8 @@ def main():
     print(f"Fetching PRs reviewed by: {author}  (since {args.since})")
 
     print("Discovering repos...", end=" ", flush=True)
-    repos = discover_repos(f"reviewed-by:{author}+-author:{author}", args.since, org=args.org)
+    # NOTE: a review updates the PR, so searching by updated date finds PRs opened before --since but reviewed after it.
+    repos = discover_repos(f"reviewed-by:{author}+-author:{author}", args.since, org=args.org, date_field="updated")
     print(f"{len(repos)} repos found: {', '.join(r.split('/')[1] for r in repos)}")
 
     all_numbers: list[tuple[str, int]] = []
@@ -54,6 +56,7 @@ def main():
         numbers = search_pr_numbers(
             f"reviewed-by:{author}+-author:{author}+repo:{repo}",
             args.since,
+            date_field="updated",
         )
         print(f"{len(numbers)} found")
         all_numbers.extend(numbers)
@@ -63,6 +66,7 @@ def main():
 
     for pr in prs:
         pr["your_reviews"] = [r for r in pr.get("reviews", []) if r["author"] == author]
+    prs = filter_reviewed_since(prs, parse_since(args.since))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(prs, indent=2))
